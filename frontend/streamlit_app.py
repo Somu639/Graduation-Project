@@ -14,6 +14,10 @@ from __future__ import annotations
 import os
 import sys
 
+# Standalone mode on Streamlit Cloud (no separate FastAPI server).
+os.environ.setdefault("LOCAL_MODE", "1")
+os.environ.setdefault("VECTOR_STORE", "memory")
+
 import requests
 import streamlit as st
 

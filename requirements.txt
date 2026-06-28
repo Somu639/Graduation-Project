@@ -1,39 +1,11 @@
-# ---------------------------------------------------------------------------
-# Spotify Discovery Analyzer - DEPLOYABLE requirements (Streamlit Cloud, etc.)
-#
-# This slim set runs the app standalone: FastAPI API + Streamlit dashboard with
-# the dependency-free in-memory vector store and the LLM-free extractive engine.
-# It avoids heavy/native packages (torch, chromadb, transformers) and the
-# app-store-scraper requests-pin conflict, so it installs cleanly.
-#
-# For the FULL ML stack (LangChain, ChromaDB, embeddings, all scrapers), use:
-#     pip install -r requirements-full.txt
-# ---------------------------------------------------------------------------
+# Streamlit Cloud — minimal deps (fast install, Python 3.12)
+# Full API / ML stack: requirements-full.txt  |  API-only extras: requirements-api.txt
 
-# --- API layer ---
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic==2.10.4
-python-dotenv==1.0.1
-
-# --- HTTP / scraping (lightweight) ---
-requests==2.32.3
-beautifulsoup4==4.12.3
-
-# --- NLP (pure-Python) ---
-vaderSentiment==3.3.2
-langdetect==1.0.9
-
-# --- Dashboard ---
-streamlit==1.41.1
-plotly==5.24.1
-pandas==2.2.3
-wordcloud==1.9.4
-matplotlib==3.10.0
-
-# --- Optional caching / export ---
-redis==5.2.1
-fpdf2==2.8.2
-
-# --- Dev / testing (local only; omit on Streamlit Cloud) ---
-# pytest==8.3.4
+streamlit>=1.41.1,<2
+plotly>=5.24.1,<6
+pandas>=2.2.3,<2.3
+pydantic>=2.10.4,<3
+vaderSentiment>=3.3.2
+langdetect>=1.0.9
+requests>=2.32.3,<3
+python-dotenv>=1.0.1

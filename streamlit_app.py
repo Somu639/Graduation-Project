@@ -1,21 +1,28 @@
-"""Root entry point for Streamlit Cloud.
+"""Streamlit Cloud entry point.
 
-Streamlit Community Cloud auto-detects a top-level ``streamlit_app.py``. This
-launcher adds the repo root to the path and runs the real dashboard in
-standalone (in-process) mode, so no separate FastAPI server is required.
+Streamlit executes THIS file on every rerun. It must call ``main()`` directly
+(never via runpy) so all ``st.*`` widgets register with Streamlit's runner.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
-import runpy
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+_FRONTEND = os.path.join(ROOT, "frontend")
+if _FRONTEND not in sys.path:
+    sys.path.insert(0, _FRONTEND)
 
-# Default to the in-process backend on Streamlit Cloud (no API server there).
-os.environ.setdefault("LOCAL_MODE", "1")
+os.environ["LOCAL_MODE"] = "1"
+os.environ.setdefault("VECTOR_STORE", "memory")
 
-runpy.run_path(os.path.join(ROOT, "frontend", "streamlit_app.py"), run_name="__main__")
+_DASHBOARD_PATH = os.path.join(_FRONTEND, "streamlit_app.py")
+_spec = importlib.util.spec_from_file_location("dashboard", _DASHBOARD_PATH)
+_dashboard = importlib.util.module_from_spec(_spec)
+assert _spec.loader is not None
+_spec.loader.exec_module(_dashboard)
+_dashboard.main()

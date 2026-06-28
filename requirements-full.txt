@@ -7,8 +7,11 @@
 # NOTE: requires Python <3.14 (chromadb/torch/pinecone wheels). Use 3.12.
 # ---------------------------------------------------------------------------
 
-# Base deployable set
+# Base deployable set (Streamlit + in-process engine)
 -r requirements.txt
+
+# API server extras
+-r requirements-api.txt
 
 # --- LangChain / RAG / agent orchestration ---
 langchain==0.3.14

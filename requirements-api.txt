@@ -1,0 +1,8 @@
+# FastAPI server extras (local / Docker — not needed on Streamlit Cloud)
+-r requirements.txt
+
+fastapi>=0.115.6,<0.116
+uvicorn[standard]>=0.34.0,<0.35
+redis>=5.2.1,<6
+fpdf2>=2.8.2,<3
+beautifulsoup4>=4.12.3,<5

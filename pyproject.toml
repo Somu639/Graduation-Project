@@ -1,0 +1,10 @@
+[project]
+name = "spotify-discovery-analyzer"
+version = "0.1.0"
+description = "AI-Powered Review Discovery Engine for Spotify feedback"
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+
+[tool.streamlit]
+# Hint for Streamlit Cloud — main entry file at repo root
+entrypoint = "streamlit_app.py"
