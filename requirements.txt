@@ -35,5 +35,5 @@ matplotlib==3.10.0
 redis==5.2.1
 fpdf2==2.8.2
 
-# --- Dev / testing ---
-pytest==8.3.4
+# --- Dev / testing (local only; omit on Streamlit Cloud) ---
+# pytest==8.3.4
