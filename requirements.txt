@@ -1,6 +1,13 @@
 # ---------------------------------------------------------------------------
-# Spotify Discovery Analyzer - Python 3.11+
-# Install:  pip install -r requirements.txt
+# Spotify Discovery Analyzer - DEPLOYABLE requirements (Streamlit Cloud, etc.)
+#
+# This slim set runs the app standalone: FastAPI API + Streamlit dashboard with
+# the dependency-free in-memory vector store and the LLM-free extractive engine.
+# It avoids heavy/native packages (torch, chromadb, transformers) and the
+# app-store-scraper requests-pin conflict, so it installs cleanly.
+#
+# For the FULL ML stack (LangChain, ChromaDB, embeddings, all scrapers), use:
+#     pip install -r requirements-full.txt
 # ---------------------------------------------------------------------------
 
 # --- API layer ---
@@ -8,57 +15,25 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
 python-dotenv==1.0.1
-redis==5.2.1
-fpdf2==2.8.2
 
-# --- LangChain / RAG / agent orchestration ---
-langchain==0.3.14
-langchain-core==0.3.29
-langchain-community==0.3.14
-langchain-openai==0.2.14
-langchain-anthropic==0.3.1
-langchain-huggingface==0.1.2
-langgraph==0.2.62
-
-# --- LLM providers ---
-openai==1.59.6
-anthropic==0.42.0
-
-# --- Vector stores ---
-chromadb==0.5.23
-langchain-chroma==0.1.4
-pinecone==5.4.2
-langchain-pinecone==0.2.0
-
-# --- Embeddings ---
-sentence-transformers==3.3.1
-langchain-voyageai==0.1.4
-voyageai==0.3.2
-
-# --- Scraping ---
-beautifulsoup4==4.12.3
+# --- HTTP / scraping (lightweight) ---
 requests==2.32.3
-praw==7.8.1
-app-store-scraper==0.3.5
-google-play-scraper==1.2.7
-lxml==5.3.0
+beautifulsoup4==4.12.3
 
-# --- Text processing / NLP ---
+# --- NLP (pure-Python) ---
 vaderSentiment==3.3.2
-scikit-learn==1.6.0
-transformers==4.47.1
-nltk==3.9.1
 langdetect==1.0.9
 
-# --- Frontend ---
+# --- Dashboard ---
 streamlit==1.41.1
 plotly==5.24.1
+pandas==2.2.3
 wordcloud==1.9.4
 matplotlib==3.10.0
 
-# --- Data handling / plotting ---
-pandas==2.2.3
-numpy==2.2.1
+# --- Optional caching / export ---
+redis==5.2.1
+fpdf2==2.8.2
 
-# --- Dev / testing (optional) ---
+# --- Dev / testing ---
 pytest==8.3.4

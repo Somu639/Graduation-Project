@@ -12,11 +12,22 @@ Run with the API up:
 from __future__ import annotations
 
 import os
+import sys
 
 import requests
 import streamlit as st
 
+# Make the project root importable so the in-process backend can load
+# rag/agents/api modules when running standalone (e.g. on Streamlit Cloud).
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
+
+# Local (in-process) mode: used automatically when no FastAPI server is reachable.
+# Force it with LOCAL_MODE=1, or force HTTP with USE_API=1.
+import local_service as svc  # noqa: E402  (after sys.path setup)
 
 # Spotify palette.
 SPOTIFY_GREEN = "#1DB954"
@@ -74,7 +85,54 @@ def inject_css() -> None:
 # --------------------------------------------------------------------------- #
 # API helpers
 # --------------------------------------------------------------------------- #
+def _use_local() -> bool:
+    """Decide whether to use the in-process backend (cached per session)."""
+    if os.getenv("LOCAL_MODE", "").lower() in ("1", "true", "yes"):
+        return True
+    if os.getenv("USE_API", "").lower() in ("1", "true", "yes"):
+        return False
+    if "use_local" not in st.session_state:
+        st.session_state["use_local"] = not _check_health()
+    return st.session_state["use_local"]
+
+
+def _local_get(path: str, params: dict):
+    p = params or {}
+    if path == "/stats/overview":
+        return svc.stats_overview()
+    if path == "/stats/timeline":
+        return svc.stats_timeline()
+    if path == "/insights/themes":
+        return svc.insights_themes(int(p.get("top_k", 20)), p.get("source"), p.get("sentiment"))
+    if path == "/insights/frustrations":
+        return svc.insights_frustrations(int(p.get("top_k", 15)))
+    if path == "/insights/segments":
+        return svc.insights_segments(str(p.get("full", "false")).lower() in ("true", "1", "yes"))
+    if path == "/insights/question":
+        return svc.insights_question(p.get("question", ""), p.get("segment"), p.get("source"))
+    if path == "/data/search":
+        return svc.data_search(p.get("q"), p.get("source"), p.get("sentiment"),
+                               p.get("rating"), p.get("theme"), int(p.get("limit", 50)))
+    raise ValueError(f"No local route for GET {path}")
+
+
+def _local_post(path: str, body: dict):
+    if path == "/data/seed":
+        return svc.seed()
+    if path == "/agent/research":
+        return svc.agent_research(body.get("research_questions", []))
+    if path == "/export/report":
+        return svc.export_report(body.get("format", "markdown"), body.get("title", "Report"))
+    raise ValueError(f"No local route for POST {path}")
+
+
 def api_get(path: str, params: dict | None = None, timeout: int = 120):
+    if _use_local():
+        try:
+            return _local_get(path, params or {})
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"{path} failed: {exc}")
+            return None
     try:
         resp = requests.get(f"{API_BASE}{path}", params=params, timeout=timeout)
         resp.raise_for_status()
@@ -85,6 +143,12 @@ def api_get(path: str, params: dict | None = None, timeout: int = 120):
 
 
 def api_post(path: str, payload: dict, timeout: int = 300):
+    if _use_local():
+        try:
+            return _local_post(path, payload or {})
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"{path} failed: {exc}")
+            return None
     try:
         resp = requests.post(f"{API_BASE}{path}", json=payload, timeout=timeout)
         resp.raise_for_status()
@@ -550,11 +614,13 @@ def main() -> None:
     choice = st.sidebar.radio("Navigate", list(PAGES.keys()))
     st.sidebar.markdown("---")
 
-    if _check_health():
+    if _use_local():
+        st.sidebar.info("Running in standalone mode (in-process engine)")
+    elif _check_health():
         st.sidebar.success("API connected")
     else:
         st.sidebar.error("API unreachable — start: uvicorn api.main:app --reload")
-    st.sidebar.caption(f"API: {API_BASE}")
+    st.sidebar.caption(f"API: {API_BASE}" if not _use_local() else "Backend: in-process")
 
     PAGES[choice]()
 

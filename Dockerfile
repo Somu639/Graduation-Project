@@ -3,7 +3,7 @@
 # --------------------------------------------------------------------------- #
 # Stage 1: builder - install dependencies into an isolated virtualenv
 # --------------------------------------------------------------------------- #
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 ENV PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -19,13 +19,13 @@ WORKDIR /app
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+COPY requirements.txt requirements-full.txt ./
+RUN pip install --upgrade pip && pip install -r requirements-full.txt
 
 # --------------------------------------------------------------------------- #
 # Stage 2: runtime - copy the venv + app code into a slim image
 # --------------------------------------------------------------------------- #
-FROM python:3.11-slim AS runtime
+FROM python:3.12-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
