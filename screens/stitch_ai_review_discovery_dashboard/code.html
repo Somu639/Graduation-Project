@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI-Powered Review Discovery Engine - Overview</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-secondary-fixed-variant": "#00531f",
+                    "primary-fixed": "#72fe8f",
+                    "primary-container": "#1db954",
+                    "on-secondary-fixed": "#002108",
+                    "on-primary-fixed": "#002108",
+                    "primary": "#53e076",
+                    "tertiary-fixed": "#e4e2e1",
+                    "background": "#131313",
+                    "secondary": "#3de96f",
+                    "on-tertiary-fixed": "#1b1c1c",
+                    "on-tertiary-fixed-variant": "#474746",
+                    "on-primary": "#003914",
+                    "secondary-fixed": "#69ff89",
+                    "on-error": "#690005",
+                    "on-tertiary-container": "#383838",
+                    "on-tertiary": "#303030",
+                    "secondary-container": "#00cc57",
+                    "primary-fixed-dim": "#53e076",
+                    "surface-container-highest": "#353534",
+                    "on-primary-fixed-variant": "#005320",
+                    "surface-container": "#201f1f",
+                    "on-error-container": "#ffdad6",
+                    "surface-dim": "#131313",
+                    "surface-container-low": "#1c1b1b",
+                    "on-background": "#e5e2e1",
+                    "inverse-on-surface": "#313030",
+                    "secondary-fixed-dim": "#34e36a",
+                    "tertiary": "#c8c6c5",
+                    "on-secondary": "#003913",
+                    "on-secondary-container": "#004f1d",
+                    "inverse-surface": "#e5e2e1",
+                    "tertiary-container": "#a2a1a1",
+                    "surface-bright": "#393939",
+                    "surface-tint": "#53e076",
+                    "tertiary-fixed-dim": "#c8c6c5",
+                    "error-container": "#93000a",
+                    "on-surface": "#e5e2e1",
+                    "surface-variant": "#353534",
+                    "outline": "#869585",
+                    "surface-container-lowest": "#0e0e0e",
+                    "on-surface-variant": "#bccbb9",
+                    "on-primary-container": "#004118",
+                    "error": "#ffb4ab",
+                    "inverse-primary": "#006e2d",
+                    "surface": "#131313",
+                    "outline-variant": "#3d4a3d",
+                    "surface-container-high": "#2a2a2a"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "gutter": "24px",
+                    "container-margin": "32px",
+                    "stack-md": "16px",
+                    "stack-lg": "32px",
+                    "stack-sm": "8px",
+                    "card-padding": "24px"
+            },
+            "fontFamily": {
+                    "label-md": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "headline-sm": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "display-lg": ["Inter"],
+                    "body-md": ["Inter"]
+            },
+            "fontSize": {
+                    "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "headline-sm": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                    "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #121212;
+            color: #e5e2e1;
+            font-family: 'Inter', sans-serif;
+        }
+        .glass-card {
+            background: #181818;
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: all 0.3s ease;
+        }
+        .glass-card:hover {
+            background: #202020;
+            border-color: rgba(29, 185, 84, 0.3);
+        }
+        .spotify-green-gradient {
+            background: linear-gradient(180deg, #1DB954 0%, #191414 100%);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .active-tab-indicator {
+            width: 4px;
+            height: 4px;
+            background-color: #1DB954;
+            border-radius: 50%;
+            margin: 4px auto 0;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #121212;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #1DB954;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col md:flex-row">
+<!-- Sidebar Navigation (Desktop) -->
+<aside class="hidden lg:flex flex-col h-screen w-64 sticky top-0 bg-surface-container p-4 border-r border-outline-variant">
+<div class="mb-10 px-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-3xl">headphones</span>
+<span class="text-primary font-headline-sm font-bold">Research Console</span>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center gap-3 px-4 py-3 bg-surface-container-high text-primary rounded-lg font-label-md transition-transform active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Overview
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-highest rounded-lg font-label-md transition-colors" href="#">
+<span class="material-symbols-outlined">search</span>
+                Discovery Search
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-highest rounded-lg font-label-md transition-colors" href="#">
+<span class="material-symbols-outlined">topic</span>
+                Theme Explorer
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-highest rounded-lg font-label-md transition-colors" href="#">
+<span class="material-symbols-outlined">groups</span>
+                Segment Analysis
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-highest rounded-lg font-label-md transition-colors" href="#">
+<span class="material-symbols-outlined">quiz</span>
+                Insight Q&amp;A
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-highest rounded-lg font-label-md transition-colors" href="#">
+<span class="material-symbols-outlined">smart_toy</span>
+                Research Agent
+            </a>
+</nav>
+<div class="mt-auto pt-6 border-t border-outline-variant px-2">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A professional studio portrait of a modern UX researcher with a clean-cut look, wearing a minimalist dark turtleneck, set against a dark moody background with subtle green rim lighting to match the Spotify aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBa1jDP1Ex9oRxs5SFUz4gV61vNXlX9AoDsz4-jvr-D2A26ruZVLGDI5jdm2cMxWqNxSsD51_g2RpYx3qLYErEizgdIrfUPpH1Tx7BIAHTyVCIDhGnSa_aUpuvydRvKYifcjiXwwGIGOqM61WNnukvYaYPPGoBcghu_teN-lQHZS1if8on9fsi78XAPMkq9vOfYoIQXy1niCIJfS-G7c1pG0ENxOgZYCeKw38NpBWg3tA-qVGfnCMBD"/>
+</div>
+<div>
+<p class="font-label-md text-on-surface">Alex Chen</p>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Product Owner</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col min-h-screen overflow-x-hidden">
+<!-- Top App Bar (JSON Informed) -->
+<header class="sticky top-0 z-50 flex justify-between items-center w-full px-container-margin py-4 bg-surface-container-low border-b border-outline-variant">
+<div class="flex items-center gap-4 lg:hidden">
+<span class="material-symbols-outlined text-primary">headphones</span>
+</div>
+<div class="hidden md:block">
+<h1 class="font-headline-sm font-bold text-on-surface">AI-Powered Review Discovery Engine</h1>
+</div>
+<div class="flex items-center gap-4">
+<button class="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full bg-primary-container text-on-primary-container font-label-md hover:opacity-80 transition-all">
+                    Load sample data
+                </button>
+<button class="flex items-center gap-2 px-4 py-2 rounded-full border border-outline-variant text-on-surface-variant font-label-md hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-sm">refresh</span>
+                    Refresh
+                </button>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary">sensors</span>
+</div>
+</header>
+<!-- Dashboard Canvas -->
+<div class="p-container-margin space-y-stack-lg max-w-7xl mx-auto w-full">
+<!-- Metric Cards Row -->
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter">
+<div class="glass-card p-card-padding rounded-xl">
+<p class="font-label-md text-on-surface-variant mb-2">Total Reviews</p>
+<h2 class="font-display-lg text-headline-lg text-on-surface">42,892</h2>
+<div class="mt-4 flex items-center gap-2 text-primary font-label-sm">
+<span class="material-symbols-outlined text-sm">trending_up</span>
+<span>+12.5% this month</span>
+</div>
+</div>
+<div class="glass-card p-card-padding rounded-xl">
+<p class="font-label-md text-on-surface-variant mb-2">Average Rating</p>
+<div class="flex items-baseline gap-1">
+<h2 class="font-display-lg text-headline-lg text-on-surface">4.2</h2>
+<span class="text-on-surface-variant font-headline-sm">/ 5.0</span>
+</div>
+<div class="mt-4 flex gap-1">
+<span class="material-symbols-outlined text-primary text-sm" style="font-variation-settings: 'FILL' 1;">star</span>
+</div></div></section></div></main></body></html>

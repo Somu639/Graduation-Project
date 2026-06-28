@@ -1,0 +1,107 @@
+services:
+  # --------------------------------------------------------------------- #
+  # FastAPI application
+  # --------------------------------------------------------------------- #
+  api:
+    build:
+      context: .
+      target: runtime
+    image: spotify-discovery-analyzer:latest
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: "8000"
+      VECTOR_STORE: chroma
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      chromadb:
+        condition: service_started
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------- #
+  # Streamlit dashboard (reuses the same image, different command)
+  # --------------------------------------------------------------------- #
+  frontend:
+    image: spotify-discovery-analyzer:latest
+    build:
+      context: .
+      target: runtime
+    command: >
+      streamlit run frontend/streamlit_app.py
+      --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    environment:
+      API_BASE_URL: http://api:8000/api/v1
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------- #
+  # ChromaDB vector store
+  # --------------------------------------------------------------------- #
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    ports:
+      - "8001:8000"
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma-data:/chroma/chroma
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------- #
+  # Redis cache
+  # --------------------------------------------------------------------- #
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------- #
+  # n8n workflow automation
+  # --------------------------------------------------------------------- #
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      SDA_API_BASE: http://api:8000/api/v1
+      N8N_HOST: localhost
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      GENERIC_TIMEZONE: Etc/UTC
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-changeme}
+    volumes:
+      - n8n-data:/home/node/.n8n
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  chroma-data:
+  redis-data:
+  n8n-data:

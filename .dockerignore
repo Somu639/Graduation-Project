@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local data / secrets
+.env
+.chroma/
+data/
+*.sqlite3
+
+# VCS / editor / CI
+.git/
+.github/
+.idea/
+.vscode/
+
+# Docs / misc
+*.md
+n8n/

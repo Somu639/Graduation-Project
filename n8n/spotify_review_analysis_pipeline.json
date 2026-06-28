@@ -1,0 +1,559 @@
+{
+  "name": "Spotify Review Analysis Pipeline",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Etc/UTC",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111101",
+      "name": "Schedule Trigger - Daily 2AM UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -160,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SDA_API_BASE }}/scrapers/app-store",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \"limit\": 200, \"incremental\": true }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111102",
+      "name": "Fetch App Store Reviews",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SDA_API_BASE }}/scrapers/play-store",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \"limit\": 200, \"incremental\": true }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111103",
+      "name": "Fetch Play Store Reviews",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SDA_API_BASE }}/scrapers/reddit",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \"limit_per_query\": 50 }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111104",
+      "name": "Fetch Reddit Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 3,
+        "options": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111105",
+      "name": "Merge new reviews",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SDA_API_BASE }}/process/clean",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \"reviews\": $input.all().map(item => item.json) }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111106",
+      "name": "Preprocess / Clean",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SDA_API_BASE }}/process/embed",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111107",
+      "name": "Generate Embeddings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SDA_API_BASE }}/process/themes",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111108",
+      "name": "Theme Extraction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SDA_API_BASE }}/rag/upsert",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111109",
+      "name": "Update Vector Store",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-100-reviews",
+              "leftValue": "={{ $('Merge new reviews').all().length }}",
+              "rightValue": 100,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111110",
+      "name": "More than 100 new reviews?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SDA_API_BASE }}/agent/research",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \"research_questions\": [ \"Why do users struggle to discover new music?\", \"What are the most common recommendation frustrations?\", \"Why do users repeatedly listen to the same content?\", \"What unmet needs appear consistently across reviews?\" ] }) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "Run Insight Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#spotify-insights",
+          "mode": "name"
+        },
+        "text": "=:headphones: *Spotify Review Analysis* — daily run complete.\nNew reviews ingested: {{ $('Merge new reviews').all().length }}\nVector store updated and themes refreshed.\n{{ $json.summary ? '*Insight summary:* ' + $json.summary : 'Insight agent skipped (<= 100 new reviews).' }}",
+        "otherOptions": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111112",
+      "name": "Slack Daily Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        2000,
+        320
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "REPLACE_SLACK_CRED_ID",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Daily Stats",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "date": "={{ $now.toISO() }}",
+            "new_reviews": "={{ $('Merge new reviews').all().length }}",
+            "insight_run": "={{ $('Merge new reviews').all().length > 100 }}",
+            "summary": "={{ $json.summary || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "date",
+              "displayName": "date",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "new_reviews",
+              "displayName": "new_reviews",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "insight_run",
+              "displayName": "insight_run",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111113",
+      "name": "Append Stats to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        2240,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_GSHEETS_CRED_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "11111111-1111-4111-8111-111111111114",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#spotify-alerts",
+          "mode": "name"
+        },
+        "text": "=:rotating_light: *Spotify Review Pipeline FAILED*\nWorkflow: {{ $json.workflow.name }}\nNode: {{ $json.execution.lastNodeExecuted }}\nError: {{ $json.execution.error.message }}\nTime: {{ $now.toISO() }}",
+        "otherOptions": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111115",
+      "name": "Slack Error Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        720
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "REPLACE_SLACK_CRED_ID",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger - Daily 2AM UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch App Store Reviews",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Play Store Reviews",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Reddit Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch App Store Reviews": {
+      "main": [
+        [
+          {
+            "node": "Merge new reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Play Store Reviews": {
+      "main": [
+        [
+          {
+            "node": "Merge new reviews",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Reddit Posts": {
+      "main": [
+        [
+          {
+            "node": "Merge new reviews",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge new reviews": {
+      "main": [
+        [
+          {
+            "node": "Preprocess / Clean",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preprocess / Clean": {
+      "main": [
+        [
+          {
+            "node": "Generate Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Theme Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Theme Extraction": {
+      "main": [
+        [
+          {
+            "node": "Update Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Vector Store": {
+      "main": [
+        [
+          {
+            "node": "More than 100 new reviews?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "More than 100 new reviews?": {
+      "main": [
+        [
+          {
+            "node": "Run Insight Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Insight Agent": {
+      "main": [
+        [
+          {
+            "node": "Slack Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Append Stats to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Slack Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "spotify-discovery-analyzer"
+  },
+  "tags": [
+    {
+      "name": "spotify"
+    },
+    {
+      "name": "data-pipeline"
+    }
+  ]
+}

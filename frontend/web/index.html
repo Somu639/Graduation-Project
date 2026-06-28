@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI-Powered Review Discovery Engine</title>
+<style>
+  :root {
+    --green: #1DB954; --green2: #1ED760; --bg: #121212; --panel: #181818;
+    --panel2: #202020; --line: #2a2a2a; --text: #FFFFFF; --muted: #B3B3B3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 18px 28px;
+    background: linear-gradient(90deg, #0a0a0a, #121212);
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10;
+  }
+  header .logo { font-size: 26px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .topbar { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .pill {
+    background: var(--green); color: #000; border: none; border-radius: 500px;
+    padding: 9px 18px; font-weight: 700; cursor: pointer; font-size: 13px;
+  }
+  .pill:hover { background: var(--green2); }
+  .pill.secondary { background: #333; color: #fff; }
+  #status { color: var(--muted); font-size: 12px; }
+  nav {
+    display: flex; gap: 6px; padding: 12px 28px; background: var(--bg);
+    border-bottom: 1px solid var(--line); flex-wrap: wrap;
+  }
+  .tab {
+    background: transparent; color: var(--muted); border: none; cursor: pointer;
+    padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px;
+  }
+  .tab:hover { color: #fff; background: var(--panel); }
+  .tab.active { color: var(--green); background: var(--panel); }
+  main { padding: 24px 28px 60px; max-width: 1200px; margin: 0 auto; }
+  .page { display: none; }
+  .page.active { display: block; animation: fade .3s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+  h2 { font-size: 22px; margin: 0 0 16px; }
+  .grid { display: grid; gap: 16px; }
+  .cards { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px;
+  }
+  .metric .value { color: var(--green); font-size: 30px; font-weight: 800; }
+  .metric .label { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px; margin-bottom: 18px;
+  }
+  .panel h3 { margin: 0 0 14px; font-size: 16px; }
+  .bar-row { display: flex; align-items: center; gap: 12px; margin: 7px 0; }
+  .bar-label { width: 150px; font-size: 13px; color: var(--muted); text-transform: capitalize; }
+  .bar-track { flex: 1; background: #2a2a2a; border-radius: 6px; height: 18px; overflow: hidden; }
+  .bar-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--green2)); }
+  .bar-val { width: 50px; text-align: right; font-size: 13px; }
+  input, select, textarea {
+    background: var(--panel2); color: #fff; border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 12px; font-size: 14px; width: 100%;
+  }
+  textarea { min-height: 80px; resize: vertical; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .row > div { flex: 1; min-width: 140px; }
+  label.fld { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .quote {
+    background: var(--panel2); border-left: 4px solid var(--green);
+    border-radius: 8px; padding: 12px 14px; margin: 10px 0;
+  }
+  .quote .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .chip {
+    display: inline-block; background: #283b2e; color: var(--green2);
+    border-radius: 500px; padding: 3px 10px; font-size: 12px; margin: 2px;
+  }
+  .clickable { cursor: pointer; }
+  .clickable:hover .bar-label { color: #fff; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px; text-align: center; border: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  td.seg { text-align: left; color: var(--muted); text-transform: capitalize; }
+  .sev-high { background: #1DB954; color: #000; font-weight: 700; }
+  .sev-medium { background: #14642c; }
+  .sev-low { background: #21331f; color: var(--muted); }
+  .sev-none { color: #555; }
+  .muted { color: var(--muted); }
+  .spinner { color: var(--green); font-size: 13px; }
+  a { color: var(--green2); }
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">🎧</span>
+  <div>
+    <h1>AI-Powered Review Discovery Engine</h1>
+    <div class="sub">Spotify music-discovery feedback · RAG + insight agents</div>
+  </div>
+  <div class="topbar">
+    <span id="status">connecting…</span>
+    <button class="pill secondary" onclick="loadAll()">↻ Refresh</button>
+    <button class="pill" onclick="seedData()">Load sample data</button>
+  </div>
+</header>
+
+<nav id="nav"></nav>
+
+<main>
+  <!-- Overview -->
+  <section class="page active" id="page-overview">
+    <h2>Overview</h2>
+    <div class="grid cards" id="ov-metrics"></div>
+    <div class="grid" style="grid-template-columns: 1fr 1fr; margin-top:16px;">
+      <div class="panel"><h3>Sentiment distribution</h3><div id="ov-sentiment"></div></div>
+      <div class="panel"><h3>Rating distribution</h3><div id="ov-ratings"></div></div>
+    </div>
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+      <div class="panel"><h3>Reviews by source</h3><div id="ov-source"></div></div>
+      <div class="panel"><h3>Review volume over time</h3><div id="ov-timeline"></div></div>
+    </div>
+    <div class="panel"><h3>Discovery term frequency</h3><div id="ov-terms"></div></div>
+  </section>
+
+  <!-- Discovery Search -->
+  <section class="page" id="page-search">
+    <h2>Discovery Search</h2>
+    <div class="panel">
+      <div class="row">
+        <div style="flex:3"><label class="fld">Search query</label>
+          <input id="q" placeholder="e.g. repetitive recommendations" /></div>
+        <div><label class="fld">Source</label>
+          <select id="q-source"><option>all</option><option>app_store</option><option>play_store</option><option>reddit</option></select></div>
+        <div><label class="fld">Sentiment</label>
+          <select id="q-sent"><option>all</option><option>positive</option><option>negative</option><option>neutral</option><option>mixed</option></select></div>
+        <div style="flex:0 0 auto"><button class="pill" onclick="runSearch()">Search</button></div>
+      </div>
+    </div>
+    <div id="search-results"></div>
+  </section>
+
+  <!-- Themes -->
+  <section class="page" id="page-themes">
+    <h2>Theme Explorer</h2>
+    <div class="panel"><h3>Top themes <span class="muted">(click to see quotes)</span></h3><div id="themes-list"></div></div>
+    <div class="panel" id="theme-quotes-panel" style="display:none">
+      <h3 id="theme-quotes-title">Quotes</h3><div id="theme-quotes"></div></div>
+    <div class="panel"><h3>Top frustrations</h3><div id="frustrations-list"></div></div>
+  </section>
+
+  <!-- Segments -->
+  <section class="page" id="page-segments">
+    <h2>Segment Analysis</h2>
+    <div class="panel"><h3>Segment sizes (% of reviews)</h3><div id="seg-sizes"></div></div>
+    <div class="panel"><h3>Discovery problems × segments</h3>
+      <div style="overflow-x:auto"><div id="seg-matrix"></div></div></div>
+  </section>
+
+  <!-- Ask -->
+  <section class="page" id="page-ask">
+    <h2>Insight Q&amp;A</h2>
+    <div class="panel">
+      <div id="prebuilt"></div>
+      <label class="fld" style="margin-top:12px">Your question</label>
+      <textarea id="ask-q" placeholder="Why do users struggle to discover new music?"></textarea>
+      <div style="margin-top:12px"><button class="pill" onclick="ask()">Get insight</button></div>
+    </div>
+    <div id="ask-answer"></div>
+  </section>
+</main>
+
+<script>
+const API = location.origin + "/api/v1";
+const TABS = [
+  ["overview", "Overview"], ["search", "Discovery Search"], ["themes", "Themes"],
+  ["segments", "Segments"], ["ask", "Insight Q&A"],
+];
+const PREBUILT = [
+  "Why do users struggle to discover new music?",
+  "What are the most common recommendation frustrations?",
+  "Why do users repeatedly listen to the same content?",
+  "What unmet needs appear consistently across reviews?",
+];
+
+function el(id){ return document.getElementById(id); }
+async function getJSON(path){ const r = await fetch(API+path); if(!r.ok) throw new Error(r.status); return r.json(); }
+async function postJSON(path, body){ const r = await fetch(API+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})}); if(!r.ok) throw new Error(r.status); return r.json(); }
+
+function setStatus(t){ el("status").textContent = t; }
+
+// ---- Navigation ----
+function buildNav(){
+  const nav = el("nav");
+  TABS.forEach(([id,label],i)=>{
+    const b = document.createElement("button");
+    b.className = "tab" + (i===0?" active":""); b.textContent = label;
+    b.onclick = ()=>switchTab(id,b);
+    nav.appendChild(b);
+  });
+}
+function switchTab(id, btn){
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  el("page-"+id).classList.add("active"); btn.classList.add("active");
+}
+
+// ---- Chart helper (CSS bars) ----
+function barChart(container, data, opts={}){
+  const node = el(container); node.innerHTML = "";
+  const entries = Array.isArray(data) ? data : Object.entries(data).map(([k,v])=>[k,v]);
+  const max = Math.max(1, ...entries.map(e=>e[1]));
+  if(entries.length===0){ node.innerHTML = '<span class="muted">No data.</span>'; return; }
+  entries.forEach(([k,v])=>{
+    const row = document.createElement("div"); row.className="bar-row"+(opts.onClick?" clickable":"");
+    row.innerHTML = `<div class="bar-label">${k}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(1)}%"></div></div>
+      <div class="bar-val">${opts.pct?v+'%':v}</div>`;
+    if(opts.onClick) row.onclick = ()=>opts.onClick(k);
+    node.appendChild(row);
+  });
+}
+
+function quoteCard(content, source, sentiment){
+  const meta = [source,sentiment].filter(x=>x && x!=="n/a").join(" · ");
+  return `<div class="quote">“${escapeHtml(content)}”<div class="meta">${meta}</div></div>`;
+}
+function escapeHtml(s){ return (s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+// ---- Overview ----
+async function loadOverview(){
+  try {
+    const s = await getJSON("/stats/overview");
+    el("ov-metrics").innerHTML = `
+      ${metric(s.total_reviews,"Total reviews")}
+      ${metric(s.average_rating ?? "—","Avg rating")}
+      ${metric(Object.keys(s.by_source||{}).length,"Sources")}
+      ${metric((s.date_range?.latest||"—").slice(0,10),"Latest review")}`;
+    barChart("ov-sentiment", s.by_sentiment||{});
+    barChart("ov-ratings", s.ratings_distribution||{});
+    barChart("ov-source", s.by_source||{});
+    const tl = await getJSON("/stats/timeline");
+    barChart("ov-timeline", (tl.series||[]).map(x=>[x.period,x.count]));
+    const th = await getJSON("/insights/themes?top_k=12");
+    barChart("ov-terms", (th.themes||[]).map(t=>[t.theme,t.count]));
+  } catch(e){ el("ov-metrics").innerHTML = '<span class="muted">No data yet — click “Load sample data”.</span>'; }
+}
+function metric(v,l){ return `<div class="card metric"><div class="value">${v}</div><div class="label">${l}</div></div>`; }
+
+// ---- Search ----
+async function runSearch(){
+  const q = el("q").value.trim();
+  const src = el("q-source").value, sent = el("q-sent").value;
+  const p = new URLSearchParams({limit:"20"});
+  if(q) p.set("q",q);
+  if(src!=="all") p.set("source",src);
+  if(sent!=="all") p.set("sentiment",sent);
+  el("search-results").innerHTML = '<span class="spinner">Searching…</span>';
+  try{
+    const d = await getJSON("/data/search?"+p.toString());
+    if(!d.results.length){ el("search-results").innerHTML='<span class="muted">No results.</span>'; return; }
+    el("search-results").innerHTML = `<div class="muted" style="margin:8px 0">${d.count} results</div>` +
+      d.results.map(r=>quoteCard(r.content, r.metadata.source, r.metadata.sentiment)).join("");
+  }catch(e){ el("search-results").innerHTML='<span class="muted">Search failed.</span>'; }
+}
+
+// ---- Themes ----
+async function loadThemes(){
+  try{
+    const th = await getJSON("/insights/themes?top_k=15");
+    barChart("themes-list", (th.themes||[]).map(t=>[t.theme,t.count]), {onClick: showThemeQuotes});
+    const fr = await getJSON("/insights/frustrations?top_k=12");
+    el("frustrations-list").innerHTML = (fr.frustrations||[]).map(f=>
+      `<div class="bar-row"><div class="bar-label" style="width:auto">${f.frustration}</div>
+       <span class="chip">${f.count}</span></div>` +
+       (f.example?.quote? quoteCard(f.example.quote, f.example.source||"","") : "")
+    ).join("") || '<span class="muted">No frustrations detected.</span>';
+  }catch(e){ el("themes-list").innerHTML='<span class="muted">No data yet.</span>'; }
+}
+async function showThemeQuotes(theme){
+  el("theme-quotes-panel").style.display="block";
+  el("theme-quotes-title").textContent = `Quotes · ${theme}`;
+  el("theme-quotes").innerHTML = '<span class="spinner">Loading…</span>';
+  const p = new URLSearchParams({q: theme.replace(/_/g," "), theme, limit:"6"});
+  const d = await getJSON("/data/search?"+p.toString());
+  el("theme-quotes").innerHTML = d.results.map(r=>quoteCard(r.content, r.metadata.source, r.metadata.sentiment)).join("") || '<span class="muted">No quotes.</span>';
+}
+
+// ---- Segments ----
+async function loadSegments(){
+  try{
+    const d = await getJSON("/insights/segments?full=false");
+    const sizes = Object.entries(d.sizes||{}).map(([k,v])=>[k.replace(/_/g," "), v.pct]);
+    barChart("seg-sizes", sizes, {pct:true});
+    renderMatrix(d.comparison_matrix||{});
+  }catch(e){ el("seg-sizes").innerHTML='<span class="muted">No data yet.</span>'; }
+}
+function renderMatrix(m){
+  const segs = m.segments||[], probs = m.problems||[], mat = m.matrix||{};
+  if(!segs.length){ el("seg-matrix").innerHTML='<span class="muted">No matrix.</span>'; return; }
+  let html = "<table><tr><th>Segment</th>" + probs.map(p=>`<th>${p.replace(/_/g," ")}</th>`).join("") + "</tr>";
+  segs.forEach(s=>{
+    html += `<tr><td class="seg">${s.replace(/_/g," ")}</td>` + probs.map(p=>{
+      const cell = (mat[s]||{})[p]||{severity:"none",pct:0};
+      return `<td class="sev-${cell.severity}">${cell.pct?cell.pct+"%":"·"}</td>`;
+    }).join("") + "</tr>";
+  });
+  el("seg-matrix").innerHTML = html + "</table>";
+}
+
+// ---- Ask ----
+function buildPrebuilt(){
+  el("prebuilt").innerHTML = PREBUILT.map(q=>`<span class="chip clickable" onclick="setAsk('${q.replace(/'/g,"\\'")}')">${q}</span>`).join(" ");
+}
+function setAsk(q){ el("ask-q").value = q; }
+async function ask(){
+  const q = el("ask-q").value.trim(); if(!q) return;
+  el("ask-answer").innerHTML = '<span class="spinner">Thinking…</span>';
+  try{
+    const r = await getJSON("/insights/question?"+new URLSearchParams({question:q}).toString());
+    el("ask-answer").innerHTML = `
+      <div class="panel">
+        <h3>Insight</h3>
+        <p>${escapeHtml(r.insight||"")}</p>
+        <div>${metricInline("Confidence", Math.round((r.confidence||0)*100)+"%")} ${metricInline("Sample size", r.sample_size||0)}</div>
+        ${(r.themes_identified||[]).map(t=>`<span class="chip">${t}</span>`).join("")}
+        <h3 style="margin-top:18px">Supporting evidence</h3>
+        ${(r.supporting_evidence||[]).map(e=>quoteCard(e.quote, e.source, e.sentiment)).join("")}
+        ${(r.recommended_followup_questions||[]).length? "<h3 style='margin-top:18px'>Follow-ups</h3>"+(r.recommended_followup_questions||[]).map(f=>`<div class="muted">• ${escapeHtml(f)}</div>`).join(""):""}
+      </div>`;
+  }catch(e){ el("ask-answer").innerHTML='<span class="muted">Query failed.</span>'; }
+}
+function metricInline(l,v){ return `<span class="chip" style="background:#283b2e">${l}: ${v}</span>`; }
+
+// ---- Orchestration ----
+async function seedData(){
+  setStatus("loading sample data…");
+  try{ const s = await postJSON("/data/seed",{}); setStatus(`seeded ${s.seeded} reviews`); await loadAll(); }
+  catch(e){ setStatus("seed failed"); }
+}
+async function loadAll(){
+  await Promise.all([loadOverview(), loadThemes(), loadSegments()]);
+}
+async function init(){
+  buildNav(); buildPrebuilt();
+  try{ await fetch(location.origin+"/health"); setStatus("API connected"); }catch(e){ setStatus("API unreachable"); }
+  await loadAll();
+}
+init();
+</script>
+</body>
+</html>
