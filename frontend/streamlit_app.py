@@ -14,6 +14,15 @@ from __future__ import annotations
 import os
 import sys
 
+# Load .env before any API-key or scraper configuration is read.
+try:
+    from dotenv import load_dotenv
+
+    _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    load_dotenv(os.path.join(_ROOT, ".env"))
+except ImportError:
+    _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # Standalone mode on Streamlit Cloud (no separate FastAPI server).
 os.environ.setdefault("LOCAL_MODE", "1")
 os.environ.setdefault("VECTOR_STORE", "memory")
@@ -23,7 +32,6 @@ import streamlit as st
 
 # Make the project root importable so the in-process backend can load
 # rag/agents/api modules when running standalone (e.g. on Streamlit Cloud).
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
@@ -657,10 +665,19 @@ def page_live_reviews() -> None:
         if not result:
             return
 
+        if result.get("error"):
+            st.error(result["error"])
+
+        counts = result.get("source_counts") or {}
+        if counts:
+            st.markdown("#### Fetched per source")
+            for src, n in counts.items():
+                st.write(f"- **{src}**: {n} reviews")
+
         st.success(
             f"Done — scraped {result.get('scraped', 0)}, "
             f"processed {result.get('processed', 0)}, "
-            f"indexed {result.get('indexed', 0)}."
+            f"indexed into store."
         )
         if result.get("llm_used"):
             st.info("LLM analysis was applied to this batch.")

@@ -88,6 +88,7 @@ class PlayStoreReviewScraper:
                 "google-play-scraper is required. Install it via requirements.txt"
             ) from exc
 
+        last_error: Exception | None = None
         for attempt in range(1, self.max_retries + 1):
             try:
                 if continuation_token is not None:
@@ -105,6 +106,7 @@ class PlayStoreReviewScraper:
                     )
                 return result, token
             except Exception as exc:  # noqa: BLE001 - library raises broadly
+                last_error = exc
                 wait = self.retry_backoff * attempt
                 logger.warning(
                     "Play page fetch attempt %d/%d failed: %s. Retrying in %.1fs",
@@ -116,7 +118,9 @@ class PlayStoreReviewScraper:
                 time.sleep(wait)
 
         logger.error("All %d page-fetch attempts failed.", self.max_retries)
-        return [], None
+        raise RuntimeError(
+            f"Play Store fetch failed after {self.max_retries} attempts: {last_error}"
+        ) from last_error
 
     # --- normalization --------------------------------------------------- #
     @staticmethod

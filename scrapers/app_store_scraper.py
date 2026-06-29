@@ -23,6 +23,8 @@ import logging
 import time
 from datetime import datetime
 
+import requests
+
 from .schema import (
     DATA_DIR,
     ReviewData,
@@ -73,6 +75,42 @@ def _matches_discovery(title: str, text: str) -> bool:
 # --------------------------------------------------------------------------- #
 # Scraper
 # --------------------------------------------------------------------------- #
+# Apple RSS customer reviews (no third-party library; up to 10 pages × ~50 reviews).
+ITUNES_RSS_URL = (
+    "https://itunes.apple.com/rss/customerreviews/page={page}/id={app_id}/sortby=mostrecent/json"
+)
+ITUNES_RSS_MAX_PAGES = 10
+
+
+def _parse_rss_entry(entry: dict) -> dict | None:
+    """Convert one iTunes RSS entry to the raw dict shape used by :meth:`_normalize`."""
+    if "im:rating" not in entry:
+        return None  # first row is app metadata, not a review
+    content = entry.get("content", {})
+    review_text = content.get("label") if isinstance(content, dict) else ""
+    if not review_text:
+        summary = entry.get("summary", {})
+        review_text = summary.get("label", "") if isinstance(summary, dict) else ""
+    author = entry.get("author", {})
+    username = author.get("name", {}).get("label", "") if isinstance(author, dict) else ""
+    title = entry.get("title", {})
+    title_text = title.get("label", "") if isinstance(title, dict) else ""
+    updated = entry.get("updated", {})
+    date_str = updated.get("label", "") if isinstance(updated, dict) else ""
+    version = entry.get("im:version", {})
+    version_text = version.get("label") if isinstance(version, dict) else None
+    rating_raw = entry.get("im:rating", {})
+    rating = int(rating_raw.get("label", 0)) if isinstance(rating_raw, dict) else None
+    return {
+        "userName": username,
+        "rating": rating,
+        "title": title_text,
+        "review": review_text,
+        "date": date_str,
+        "version": version_text,
+    }
+
+
 class AppStoreReviewScraper:
     """Scrape, filter, and persist Spotify App Store reviews."""
 
@@ -93,10 +131,75 @@ class AppStoreReviewScraper:
         self.retry_backoff = retry_backoff
 
     # --- raw fetching with retries -------------------------------------- #
+    def _fetch_itunes_rss(
+        self, how_many: int, after: datetime | None = None
+    ) -> list[dict]:
+        """Fetch reviews via Apple's public iTunes RSS JSON feed (requests only)."""
+        collected: list[dict] = []
+        headers = {"User-Agent": "spotify-discovery-analyzer/1.0"}
+
+        for page in range(1, ITUNES_RSS_MAX_PAGES + 1):
+            if len(collected) >= how_many:
+                break
+            url = ITUNES_RSS_URL.format(page=page, app_id=self.app_id)
+            try:
+                resp = requests.get(url, headers=headers, timeout=20)
+                resp.raise_for_status()
+                payload = resp.json()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("iTunes RSS page %d failed: %s", page, exc)
+                break
+
+            entries = payload.get("feed", {}).get("entry", [])
+            if not isinstance(entries, list):
+                entries = [entries] if entries else []
+
+            for entry in entries:
+                raw = _parse_rss_entry(entry)
+                if not raw or not raw.get("review"):
+                    continue
+                if after and raw.get("date"):
+                    try:
+                        review_dt = datetime.fromisoformat(
+                            raw["date"].replace("Z", "+00:00")
+                        )
+                        if review_dt.replace(tzinfo=None) <= after.replace(tzinfo=None):
+                            continue
+                    except ValueError:
+                        pass
+                collected.append(raw)
+                if len(collected) >= how_many:
+                    break
+
+            if len(entries) <= 1:
+                break  # no more review pages
+            time.sleep(self.request_delay)
+
+        logger.info("iTunes RSS fetched %d reviews", len(collected))
+        return collected[:how_many]
+
     def _fetch_raw(
         self, how_many: int, after: datetime | None = None
     ) -> list[dict]:
-        """Fetch raw review dicts from the library with retry/backoff.
+        """Fetch raw review dicts — library first, iTunes RSS fallback."""
+        try:
+            return self._fetch_via_library(how_many=how_many, after=after)
+        except ImportError:
+            logger.info("app-store-scraper not installed; using iTunes RSS feed.")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("app-store-scraper failed (%s); falling back to iTunes RSS.", exc)
+
+        rss = self._fetch_itunes_rss(how_many=how_many, after=after)
+        if rss:
+            return rss
+        raise RuntimeError(
+            "Could not fetch App Store reviews (library unavailable and iTunes RSS returned nothing)."
+        )
+
+    def _fetch_via_library(
+        self, how_many: int, after: datetime | None = None
+    ) -> list[dict]:
+        """Fetch raw review dicts from the ``app_store_scraper`` library with retry/backoff.
 
         Args:
             how_many: Target number of reviews to collect.

@@ -6,3 +6,4 @@ uvicorn[standard]>=0.34.0,<0.35
 redis>=5.2.1,<6
 fpdf2>=2.8.2,<3
 beautifulsoup4>=4.12.3,<5
+google-play-scraper>=1.2.7,<2

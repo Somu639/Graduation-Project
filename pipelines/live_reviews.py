@@ -19,51 +19,68 @@ def scrape_live(
     limit: int = 50,
     *,
     discovery_filter: bool = False,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict], list[str], dict[str, int]]:
     """Scrape reviews from the requested sources.
 
     Returns:
-        (records, warnings) — warnings describe skipped sources or missing deps.
+        (records, warnings, source_counts) — per-source fetch counts and any warnings.
     """
     collected: list[dict] = []
     warnings: list[str] = []
+    source_counts: dict[str, int] = {}
 
     for source in sources:
+        before = len(collected)
         try:
             if source == "play_store":
                 from scrapers.play_store_scraper import PlayStoreReviewScraper
 
-                collected += PlayStoreReviewScraper().scrape(how_many=limit, sort="newest")
+                batch = PlayStoreReviewScraper().scrape(how_many=limit, sort="newest")
+                collected += batch
             elif source == "app_store":
                 from scrapers.app_store_scraper import AppStoreReviewScraper
 
-                collected += AppStoreReviewScraper().scrape(
+                batch = AppStoreReviewScraper().scrape(
                     how_many=limit,
                     keyword_filter=discovery_filter,
                 )
+                collected += batch
             elif source == "reddit":
                 if not _reddit_configured():
                     warnings.append("reddit: set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in .env")
+                    source_counts[source] = 0
                     continue
                 from scrapers.reddit_scraper import RedditScraper
 
-                collected += RedditScraper().scrape(limit_per_query=min(limit, 100))
+                batch = RedditScraper().scrape(limit_per_query=min(limit, 100))
+                collected += batch
             elif source == "twitter":
                 if not os.getenv("TWITTER_BEARER_TOKEN"):
                     warnings.append("twitter: set TWITTER_BEARER_TOKEN in .env")
+                    source_counts[source] = 0
                     continue
                 from scrapers.twitter_scraper import TwitterScraper
 
-                collected += TwitterScraper().scrape(max_results=limit)
+                batch = TwitterScraper().scrape(max_results=limit)
+                collected += batch
             else:
                 warnings.append(f"unknown source: {source}")
+                source_counts[source] = 0
+                continue
+
+            count = len(collected) - before
+            source_counts[source] = count
+            if count == 0:
+                warnings.append(f"{source}: scraper returned 0 reviews (check network or filters)")
         except ImportError as exc:
-            warnings.append(f"{source}: missing dependency ({exc})")
+            warnings.append(f"{source}: missing dependency — {exc}")
+            source_counts[source] = 0
         except Exception as exc:  # noqa: BLE001
             logger.exception("Scrape failed for %s", source)
             warnings.append(f"{source}: {exc}")
+            source_counts[source] = 0
 
-    return collected, warnings
+    return collected, warnings, source_counts
 
 
 def _reddit_configured() -> bool:
@@ -112,8 +129,13 @@ def fetch_and_ingest(
     discovery_filter: bool = False,
 ) -> dict:
     """Scrape live reviews, analyze them, and index into the vector store."""
-    records, warnings = scrape_live(sources, limit, discovery_filter=discovery_filter)
+    records, warnings, source_counts = scrape_live(
+        sources, limit, discovery_filter=discovery_filter
+    )
     summary = ingest_reviews(records, vector_store, use_llm=use_llm)
     summary["warnings"] = warnings
+    summary["source_counts"] = source_counts
     summary["sources"] = sources
+    if not records and warnings:
+        summary["error"] = "No reviews fetched. See warnings for details."
     return summary

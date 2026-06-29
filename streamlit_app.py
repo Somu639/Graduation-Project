@@ -11,6 +11,12 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(ROOT, ".env"))
+except ImportError:
+    pass
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 _FRONTEND = os.path.join(ROOT, "frontend")
