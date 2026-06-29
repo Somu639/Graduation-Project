@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from datetime import datetime
 
@@ -75,11 +76,76 @@ def _matches_discovery(title: str, text: str) -> bool:
 # --------------------------------------------------------------------------- #
 # Scraper
 # --------------------------------------------------------------------------- #
-# Apple RSS customer reviews (no third-party library; up to 10 pages × ~50 reviews).
+# Apple RSS customer reviews (legacy — often returns empty since ~May 2026).
 ITUNES_RSS_URL = (
     "https://itunes.apple.com/rss/customerreviews/page={page}/id={app_id}/sortby=mostrecent/json"
 )
 ITUNES_RSS_MAX_PAGES = 10
+
+# App Store product page SSR JSON (works when RSS is empty).
+APP_STORE_PAGE_URL = "https://apps.apple.com/{country}/app/id{app_id}"
+SSR_SCRIPT_RE = re.compile(
+    r'<script[^>]*id="serialized-server-data"[^>]*>(.*?)</script>',
+    re.DOTALL,
+)
+# Storefronts to aggregate unique reviews (~24 helpful reviews per country page).
+DEFAULT_COUNTRIES: tuple[str, ...] = (
+    "us", "gb", "ca", "au", "de", "fr", "in", "br", "mx", "jp",
+    "es", "it", "nl", "se", "pl", "kr", "sg", "ae", "za", "nz",
+)
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
+def _extract_ssr_reviews(html: str) -> list[dict]:
+    """Parse Review objects from the App Store page ``serialized-server-data`` blob."""
+    match = SSR_SCRIPT_RE.search(html)
+    if not match:
+        return []
+    try:
+        payload = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return []
+
+    found: list[dict] = []
+    seen_ids: set[str] = set()
+
+    def walk(obj) -> None:
+        if isinstance(obj, dict):
+            kind = obj.get("$kind") or obj.get("kind")
+            if kind == "Review":
+                rid = str(obj.get("id") or "")
+                if rid and rid not in seen_ids:
+                    seen_ids.add(rid)
+                    found.append(obj)
+                return
+            for value in obj.values():
+                walk(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                walk(item)
+
+    walk(payload)
+    return found
+
+
+def _ssr_review_to_raw(review: dict) -> dict:
+    """Map an SSR Review object to the raw dict shape used by :meth:`_normalize`."""
+    return {
+        "review_id": str(review.get("id") or ""),
+        "userName": review.get("reviewerName", "") or "",
+        "rating": review.get("rating"),
+        "title": review.get("title", "") or "",
+        "review": review.get("contents") or review.get("content") or "",
+        "date": review.get("date", "") or "",
+        "version": review.get("version") or review.get("appVersion"),
+    }
 
 
 def _parse_rss_entry(entry: dict) -> dict | None:
@@ -131,12 +197,58 @@ class AppStoreReviewScraper:
         self.retry_backoff = retry_backoff
 
     # --- raw fetching with retries -------------------------------------- #
+    def _fetch_web_ssr(
+        self,
+        how_many: int,
+        after: datetime | None = None,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[dict]:
+        """Fetch reviews from App Store product pages (SSR JSON, May 2026+ reliable path)."""
+        collected: dict[str, dict] = {}
+
+        for country in countries:
+            if len(collected) >= how_many:
+                break
+            url = APP_STORE_PAGE_URL.format(country=country, app_id=self.app_id)
+            try:
+                resp = requests.get(url, headers=BROWSER_HEADERS, timeout=30)
+                resp.raise_for_status()
+                for review in _extract_ssr_reviews(resp.text):
+                    raw = _ssr_review_to_raw(review)
+                    rid = raw.get("review_id") or ""
+                    if not rid or not raw.get("review"):
+                        continue
+                    if after and raw.get("date"):
+                        try:
+                            review_dt = datetime.fromisoformat(
+                                raw["date"].replace("Z", "+00:00")
+                            )
+                            if review_dt.replace(tzinfo=None) <= after.replace(tzinfo=None):
+                                continue
+                        except ValueError:
+                            pass
+                    collected.setdefault(rid, raw)
+                    if len(collected) >= how_many:
+                        break
+                logger.info(
+                    "App Store web %s: %d unique reviews so far",
+                    country,
+                    len(collected),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("App Store web fetch failed for %s: %s", country, exc)
+            time.sleep(self.request_delay)
+
+        results = list(collected.values())[:how_many]
+        logger.info("App Store web SSR fetched %d reviews", len(results))
+        return results
+
     def _fetch_itunes_rss(
         self, how_many: int, after: datetime | None = None
     ) -> list[dict]:
         """Fetch reviews via Apple's public iTunes RSS JSON feed (requests only)."""
         collected: list[dict] = []
-        headers = {"User-Agent": "spotify-discovery-analyzer/1.0"}
+        headers = BROWSER_HEADERS
 
         for page in range(1, ITUNES_RSS_MAX_PAGES + 1):
             if len(collected) >= how_many:
@@ -181,19 +293,25 @@ class AppStoreReviewScraper:
     def _fetch_raw(
         self, how_many: int, after: datetime | None = None
     ) -> list[dict]:
-        """Fetch raw review dicts — library first, iTunes RSS fallback."""
-        try:
-            return self._fetch_via_library(how_many=how_many, after=after)
-        except ImportError:
-            logger.info("app-store-scraper not installed; using iTunes RSS feed.")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("app-store-scraper failed (%s); falling back to iTunes RSS.", exc)
+        """Fetch raw review dicts — web SSR first, then RSS / library fallbacks."""
+        web = self._fetch_web_ssr(how_many=how_many, after=after)
+        if web:
+            return web
 
+        logger.info("App Store web SSR returned nothing; trying iTunes RSS.")
         rss = self._fetch_itunes_rss(how_many=how_many, after=after)
         if rss:
             return rss
+
+        try:
+            return self._fetch_via_library(how_many=how_many, after=after)
+        except ImportError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("app-store-scraper library failed: %s", exc)
+
         raise RuntimeError(
-            "Could not fetch App Store reviews (library unavailable and iTunes RSS returned nothing)."
+            "Could not fetch App Store reviews (web SSR, RSS, and library all failed)."
         )
 
     def _fetch_via_library(
@@ -263,18 +381,18 @@ class AppStoreReviewScraper:
         date_str = to_iso(raw.get("date"))
         title = raw.get("title", "") or ""
         review_text = raw.get("review", "") or ""
+        review_id = raw.get("review_id") or make_review_id(
+            "app_store", username, date_str or "", review_text
+        )
 
         return ReviewData(
-            review_id=make_review_id(
-                "app_store", username, date_str or "", review_text
-            ),
+            review_id=review_id,
             source="app_store",
             username=anonymize_username(username),
             rating=raw.get("rating"),
             title=title,
             review_text=review_text,
             date=date_str,
-            # Not exposed by app_store_scraper today; populated if available.
             version=raw.get("version") or raw.get("appVersion"),
             helpful_count=raw.get("helpful_count") or raw.get("voteCount"),
         )

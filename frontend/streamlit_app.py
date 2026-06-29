@@ -640,7 +640,7 @@ def page_live_reviews() -> None:
         "Sources",
         ["play_store", "app_store", "reddit", "twitter"],
         default=["play_store"],
-        help="Play Store works without extra API keys. Reddit/Twitter need credentials in .env.",
+        help="Play Store & App Store work without extra keys. Reddit/Twitter need credentials in .env.",
     )
     limit = st.slider("Reviews per source", min_value=10, max_value=100, value=30, step=10)
     use_llm = st.checkbox("Use LLM for themes & sentiment", value=True)
