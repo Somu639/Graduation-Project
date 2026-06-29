@@ -46,13 +46,9 @@ def scrape_live(
                 )
                 collected += batch
             elif source == "reddit":
-                if not _reddit_configured():
-                    warnings.append("reddit: set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in .env")
-                    source_counts[source] = 0
-                    continue
                 from scrapers.reddit_scraper import RedditScraper
 
-                batch = RedditScraper().scrape(limit_per_query=min(limit, 100))
+                batch = RedditScraper().scrape(limit_per_query=limit)
                 collected += batch
             elif source == "twitter":
                 if not os.getenv("TWITTER_BEARER_TOKEN"):
@@ -81,10 +77,6 @@ def scrape_live(
             source_counts[source] = 0
 
     return collected, warnings, source_counts
-
-
-def _reddit_configured() -> bool:
-    return bool(os.getenv("REDDIT_CLIENT_ID") and os.getenv("REDDIT_CLIENT_SECRET"))
 
 
 def ingest_reviews(

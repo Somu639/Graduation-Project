@@ -10,6 +10,7 @@ langdetect>=1.0.9
 requests>=2.32.3,<3
 python-dotenv>=1.0.1
 google-play-scraper>=1.2.7,<2
+praw>=7.8.1,<8
 groq>=0.15.0,<1
 openai>=1.59.0,<2
 anthropic>=0.42.0,<1
