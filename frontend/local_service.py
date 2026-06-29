@@ -184,7 +184,32 @@ def agent_research(questions: list[str]) -> dict:
     from agents.insight_agent import DiscoveryResearchAgent
 
     vs, engine, _ = _components()
-    return DiscoveryResearchAgent(vector_store=vs, engine=engine).run_research_session(questions).to_dict()
+    try:
+        return DiscoveryResearchAgent(
+            vector_store=vs, engine=engine
+        ).run_research_session(questions).to_dict()
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning("agent_research failed: %s", exc)
+        return {
+            "questions": questions,
+            "findings": [
+                {
+                    "question": q,
+                    "analysis": "",
+                    "insight": engine.answer_question(q, top_k=20).insight,
+                    "confidence": 0.0,
+                    "sample_size": 0,
+                    "themes": [],
+                    "evidence": [],
+                }
+                for q in questions
+            ],
+            "segments_affected": "",
+            "followup_questions": [],
+            "summary": f"Research agent error: {exc}",
+        }
 
 
 def fetch_live(

@@ -1,10 +1,8 @@
-"""Autonomous discovery-research agent.
+"""Autonomous discovery-research agent (no LangChain / LangGraph required).
 
-Defines :class:`DiscoveryResearchAgent`, a LangChain/LangGraph ReAct agent
-(Claude by default) equipped with research tools over the indexed review corpus.
-It breaks research questions into sub-questions, gathers evidence, forms and
-validates hypotheses, identifies affected segments, and synthesizes findings
-with cited quotes into a :class:`ResearchReport`.
+Gathers evidence from the indexed review corpus via built-in research tools,
+then synthesizes multi-question findings with the configured LLM (Groq/OpenAI/
+Anthropic through :mod:`processors.llm_client`).
 """
 
 from __future__ import annotations
@@ -25,8 +23,7 @@ SYSTEM_PROMPT = """You are a User Research Analyst specializing in music streami
 Your goal is to understand why Spotify users struggle with music discovery
 and what would help them discover more new music.
 
-You have access to thousands of user reviews from App Store, Play Store,
-and Reddit discussions.
+You have access to user reviews from App Store, Play Store, Reddit, and Twitter.
 
 For each research question:
 1. Break it into sub-questions
@@ -56,7 +53,7 @@ class ResearchReport:
 
 
 class DiscoveryResearchAgent:
-    """A tool-using agent that researches Spotify discovery pain points."""
+    """Researches Spotify discovery pain points using corpus tools + LLM synthesis."""
 
     def __init__(
         self,
@@ -68,40 +65,26 @@ class DiscoveryResearchAgent:
     ) -> None:
         self.vector_store = vector_store or VectorStore()
         self.engine = engine or DiscoveryInsightEngine(vector_store=self.vector_store)
-        self.provider = provider or os.getenv("LLM_PROVIDER", "anthropic")
+        self.provider = provider or os.getenv("LLM_PROVIDER", "groq")
         self.model = model
         self.temperature = temperature
-        self._llm = None
-        self._agent = None
 
     # ------------------------------------------------------------------ #
-    # LLM
+    # LLM (lightweight — no LangChain)
     # ------------------------------------------------------------------ #
-    def _get_llm(self):
-        if self._llm is not None:
-            return self._llm
-        if self.provider == "anthropic":
-            from langchain_anthropic import ChatAnthropic
-
-            self._llm = ChatAnthropic(
-                model=self.model or os.getenv("LLM_MODEL", "claude-3-5-sonnet-latest"),
-                temperature=self.temperature,
-            )
-        else:
-            from langchain_openai import ChatOpenAI
-
-            self._llm = ChatOpenAI(
-                model=self.model or os.getenv("LLM_MODEL", "gpt-4o-mini"),
-                temperature=self.temperature,
-            )
-        return self._llm
-
     def _invoke(self, prompt: str) -> str:
-        response = self._get_llm().invoke(prompt)
-        return getattr(response, "content", str(response))
+        from processors.llm_client import chat_complete_safe
+
+        text, err = chat_complete_safe(
+            prompt, temperature=self.temperature, provider=self.provider
+        )
+        if text:
+            return text
+        logger.warning("Research agent LLM call failed: %s", err)
+        return ""
 
     # ------------------------------------------------------------------ #
-    # Tool implementations (return strings for the agent)
+    # Tool implementations
     # ------------------------------------------------------------------ #
     def _impl_search_reviews(self, query: str, source: str = "", sentiment: str = "") -> str:
         filters: dict = {}
@@ -196,102 +179,44 @@ class DiscoveryResearchAgent:
         summary = ", ".join(f"{k}: {v}" for k, v in segments.most_common())
         return f"Segment estimates (criteria: {criteria or 'general'}) -> {summary}."
 
-    def _impl_generate_hypothesis(self, observation: str) -> str:
-        prompt = (
-            "Given this observation about Spotify music discovery, propose 2-3 "
-            "specific, testable hypotheses (each with how it could be validated):\n\n"
-            f"Observation: {observation}"
-        )
-        return self._invoke(prompt)
-
-    def _impl_validate_hypothesis(self, hypothesis: str) -> str:
-        evidence = self.vector_store.similarity_search(hypothesis, top_k=12)
-        context = "\n".join(f"- {r['content'][:200]}" for r in evidence)
-        prompt = (
-            "Assess whether the evidence supports, contradicts, or is "
-            "inconclusive about this hypothesis. Give a verdict, a confidence "
-            "(0-1), and cite specific evidence.\n\n"
-            f"Hypothesis: {hypothesis}\n\nEvidence:\n{context}"
-        )
-        return self._invoke(prompt)
-
-    # ------------------------------------------------------------------ #
-    # Agent assembly
-    # ------------------------------------------------------------------ #
-    def _build_tools(self):
-        from langchain_core.tools import tool
-
-        agent = self  # capture for closures
-
-        @tool
-        def search_reviews(query: str, source: str = "", sentiment: str = "") -> str:
-            """RAG search over user reviews. Optionally filter by source
-            (app_store, play_store, reddit) and sentiment (positive/negative/neutral)."""
-            return agent._impl_search_reviews(query, source, sentiment)
-
-        @tool
-        def analyze_sentiment_distribution(source: str = "") -> str:
-            """Return sentiment distribution and average rating, optionally for a
-            single source (app_store, play_store, reddit)."""
-            return agent._impl_sentiment_distribution(source)
-
-        @tool
-        def extract_user_quotes(theme: str, count: int = 5) -> str:
-            """Get verbatim user quotes (with source attribution) about a theme."""
-            return agent._impl_extract_quotes(theme, count)
-
-        @tool
-        def compare_ratings(theme: str) -> str:
-            """Correlate a theme with star ratings vs the overall average."""
-            return agent._impl_compare_ratings(theme)
-
-        @tool
-        def identify_user_segments(criteria: str = "") -> str:
-            """Estimate user segments (power users, casual, frustrated, enthusiasts)."""
-            return agent._impl_identify_segments(criteria)
-
-        @tool
-        def generate_hypothesis(observation: str) -> str:
-            """Form testable hypotheses from an observation."""
-            return agent._impl_generate_hypothesis(observation)
-
-        @tool
-        def validate_hypothesis(hypothesis: str) -> str:
-            """Check a hypothesis against retrieved review evidence."""
-            return agent._impl_validate_hypothesis(hypothesis)
-
-        return [
-            search_reviews,
-            analyze_sentiment_distribution,
-            extract_user_quotes,
-            compare_ratings,
-            identify_user_segments,
-            generate_hypothesis,
-            validate_hypothesis,
+    def _gather_evidence(self, question: str) -> str:
+        """Run all research tools and return combined context."""
+        sections = [
+            ("Review search", self._impl_search_reviews(question)),
+            ("Sentiment distribution", self._impl_sentiment_distribution()),
+            ("Representative quotes", self._impl_extract_quotes(question, 5)),
+            ("Rating comparison", self._impl_compare_ratings(question)),
+            ("User segments", self._impl_identify_segments(question)),
         ]
-
-    def _get_agent(self):
-        if self._agent is not None:
-            return self._agent
-        try:
-            from langgraph.prebuilt import create_react_agent
-        except ImportError as exc:  # pragma: no cover - dependency guard
-            raise ImportError(
-                "langgraph is required for the agent. See requirements.txt"
-            ) from exc
-        self._agent = create_react_agent(
-            self._get_llm(), self._build_tools(), prompt=SYSTEM_PROMPT
-        )
-        return self._agent
+        return "\n\n".join(f"### {title}\n{body}" for title, body in sections)
 
     # ------------------------------------------------------------------ #
     # Public API
     # ------------------------------------------------------------------ #
     def run(self, question: str) -> str:
-        """Run the agent on a single research question; return its analysis."""
-        agent = self._get_agent()
-        result = agent.invoke({"messages": [("user", question)]})
-        return result["messages"][-1].content
+        """Research a single question using corpus tools + LLM synthesis."""
+        evidence = self._gather_evidence(question)
+
+        if not self.engine.llm_available():
+            return (
+                "Research evidence (extractive — no LLM configured):\n\n"
+                f"{evidence}"
+            )
+
+        prompt = (
+            f"{SYSTEM_PROMPT}\n\n"
+            f"Research question: {question}\n\n"
+            f"Evidence gathered from the review corpus:\n{evidence}\n\n"
+            "Write a detailed research analysis that:\n"
+            "- Answers the question with specific patterns and contradictions\n"
+            "- Cites verbatim quotes from the evidence\n"
+            "- Proposes 2-3 testable hypotheses\n"
+            "- Notes which user segments are most affected"
+        )
+        analysis = self._invoke(prompt)
+        if analysis:
+            return analysis
+        return f"LLM synthesis unavailable. Raw evidence:\n\n{evidence}"
 
     def generate_followups(self, findings: list[dict]) -> list[str]:
         """Auto-generate follow-up research questions from findings."""
@@ -313,7 +238,6 @@ class DiscoveryResearchAgent:
                     return [str(q) for q in items][:5]
                 except json.JSONDecodeError:
                     pass
-        # Fallback: reuse engine templates not already covered.
         return [
             q for q in self.engine.list_templates().values()
             if q not in {f["question"] for f in findings}
@@ -326,7 +250,6 @@ class DiscoveryResearchAgent:
         for question in questions:
             logger.info("Researching: %s", question)
             insight = self.engine.answer_question(question, top_k=20)
-            # Use the tool-using agent only when an LLM is configured.
             analysis = self.run(question) if llm_on else insight.insight
             findings.append(
                 {
@@ -350,7 +273,7 @@ class DiscoveryResearchAgent:
             summary = self._invoke(
                 "Write a concise executive summary (4-6 sentences) of these Spotify "
                 f"discovery research findings:\n{digest}"
-            )
+            ) or ("Key findings:\n" + digest)
         else:
             summary = "Key findings (extractive, no LLM configured):\n" + digest
 
@@ -372,7 +295,7 @@ class InsightAgent:
     def generate_insights(self, focus: str = "overall music discovery experience") -> str:
         return self.agent.run(
             f"Generate a grounded product insights report focused on: {focus}. "
-            "Use your tools to gather and cite evidence."
+            "Use the available evidence to cite specific user feedback."
         )
 
 

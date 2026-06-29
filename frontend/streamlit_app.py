@@ -315,7 +315,16 @@ def _local_post(path: str, body: dict):
             discovery_filter=bool(body.get("discovery_filter", False)),
         )
     if path == "/agent/research":
-        return svc.agent_research(body.get("research_questions", []))
+        try:
+            return svc.agent_research(body.get("research_questions", []))
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "questions": body.get("research_questions", []),
+                "findings": [],
+                "segments_affected": "",
+                "followup_questions": [],
+                "summary": f"Research session failed: {exc}",
+            }
     if path == "/export/report":
         return svc.export_report(body.get("format", "markdown"), body.get("title", "Report"))
     raise ValueError(f"No local route for POST {path}")

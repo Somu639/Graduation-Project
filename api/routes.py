@@ -451,13 +451,35 @@ def agent_research(req: ResearchRequest, request: Request) -> dict:
     key = CacheStore.make_key("research", "|".join(sorted(req.research_questions)))
 
     def produce():
-        return agent.run_research_session(req.research_questions).to_dict()
+        try:
+            return agent.run_research_session(req.research_questions).to_dict()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("agent_research failed: %s", exc)
+            engine = get_engine(request)
+            return {
+                "questions": req.research_questions,
+                "findings": [
+                    {
+                        "question": q,
+                        "analysis": "",
+                        "insight": engine.answer_question(q, top_k=20).insight,
+                        "confidence": 0.0,
+                        "sample_size": 0,
+                        "themes": [],
+                        "evidence": [],
+                    }
+                    for q in req.research_questions
+                ],
+                "segments_affected": "",
+                "followup_questions": [],
+                "summary": f"Research agent error: {exc}",
+            }
 
     try:
         return cached(key, produce, ttl=1800)
     except Exception as exc:  # noqa: BLE001
         logger.exception("agent_research failed")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return produce()
 
 
 # --------------------------------------------------------------------------- #
