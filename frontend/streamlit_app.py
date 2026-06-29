@@ -1,8 +1,7 @@
 """Spotify Discovery Analyzer - interactive Streamlit dashboard.
 
-Six pages (Live Reviews, Overview, Theme Explorer, Insight Q&A, Segment Analysis,
-Research Agent, Raw Data) backed by the FastAPI service, with Spotify-inspired dark
-styling.
+Research-console UI organized around six discovery questions, plus live review
+collection, corpus overview, evidence explorer, segments, and raw data.
 
 Run with the API up:
     uvicorn api.main:app --reload
@@ -40,13 +39,76 @@ API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
 # Local (in-process) mode: used automatically when no FastAPI server is reachable.
 # Force it with LOCAL_MODE=1, or force HTTP with USE_API=1.
 import local_service as svc  # noqa: E402  (after sys.path setup)
+from processors.llm_client import bootstrap_env, llm_configured  # noqa: E402
 
-# Spotify palette.
-SPOTIFY_GREEN = "#1DB954"
-SPOTIFY_BLACK = "#121212"
-SPOTIFY_GREY = "#181818"
-SPOTIFY_LIGHT = "#B3B3B3"
-GREEN_SCALE = ["#1DB954", "#1ED760", "#168d40", "#0e6b30", "#53e07f", "#0a4f24"]
+bootstrap_env()
+
+# Light theme palette (Spotify green accent).
+ACCENT = "#1DB954"
+ACCENT_HOVER = "#1ED760"
+ACCENT_SOFT = "#E8F8EE"
+BG = "#F4F6F9"
+SURFACE = "#FFFFFF"
+SIDEBAR_BG = "#FFFFFF"
+BORDER = "#E2E8F0"
+TEXT = "#111827"
+TEXT_MUTED = "#6B7280"
+TEXT_SOFT = "#9CA3AF"
+SHADOW = "0 2px 8px rgba(15, 23, 42, 0.06)"
+SHADOW_HOVER = "0 8px 24px rgba(29, 185, 84, 0.15)"
+GREEN_SCALE = ["#1DB954", "#34D399", "#059669", "#10B981", "#6EE7B7", "#047857"]
+SENTIMENT_COLORS = {
+    "positive": "#059669",
+    "negative": "#DC2626",
+    "neutral": "#6B7280",
+    "mixed": "#D97706",
+}
+
+# Core research questions the dashboard is designed to answer.
+DISCOVERY_QUESTIONS: list[dict] = [
+    {
+        "id": "discovery_struggle",
+        "icon": "🔍",
+        "question": "Why do users struggle to discover new music?",
+        "lens": "Root causes — algorithm limits, repetition, onboarding, filter bubbles",
+        "evidence": ["insight", "themes"],
+    },
+    {
+        "id": "recommendation_frustrations",
+        "icon": "😤",
+        "question": "What are the most common frustrations with recommendations?",
+        "lens": "Ranked frustrations and representative quotes from the corpus",
+        "evidence": ["insight", "frustrations"],
+    },
+    {
+        "id": "desired_behaviors",
+        "icon": "🎧",
+        "question": "What listening behaviors are users trying to achieve?",
+        "lens": "Moods, contexts, exploration goals, and playlist habits",
+        "evidence": ["insight", "themes", "behaviors"],
+    },
+    {
+        "id": "repetitive_listening",
+        "icon": "🔁",
+        "question": "What causes users to repeatedly listen to the same content?",
+        "lens": "Repetition triggers, stale playlists, and comfort listening",
+        "evidence": ["insight", "quotes_repetitive"],
+    },
+    {
+        "id": "segment_challenges",
+        "icon": "👥",
+        "question": "Which user segments experience different discovery challenges?",
+        "lens": "Segment sizes, problem heatmap, and per-segment pain points",
+        "evidence": ["segments"],
+    },
+    {
+        "id": "unmet_needs",
+        "icon": "💡",
+        "question": "What unmet needs emerge consistently across reviews?",
+        "lens": "Cross-cutting gaps users ask for but do not get today",
+        "evidence": ["insight", "themes", "frustrations"],
+    },
+]
 
 st.set_page_config(page_title="Spotify Discovery Analyzer", page_icon="🎧", layout="wide")
 
@@ -58,39 +120,140 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        .stApp {{ background-color: {SPOTIFY_BLACK}; color: #FFFFFF; }}
-        section[data-testid="stSidebar"] {{ background-color: #000000; }}
-        h1, h2, h3, h4 {{ color: #FFFFFF; font-weight: 700; }}
-        .stMarkdown, .stText, label, p {{ color: #E8E8E8; }}
-        div[data-testid="stMetric"] {{
-            background-color: {SPOTIFY_GREY};
-            border: 1px solid #282828;
-            border-radius: 12px;
-            padding: 16px;
+        .stApp {{
+            background: linear-gradient(180deg, {BG} 0%, #EEF2F7 100%);
+            color: {TEXT};
         }}
-        div[data-testid="stMetricValue"] {{ color: {SPOTIFY_GREEN}; }}
+        section[data-testid="stSidebar"] {{
+            background-color: {SIDEBAR_BG};
+            border-right: 1px solid {BORDER};
+            box-shadow: 2px 0 12px rgba(15, 23, 42, 0.04);
+        }}
+        section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2,
+        section[data-testid="stSidebar"] h3 {{
+            color: {TEXT};
+        }}
+        h1, h2, h3, h4 {{ color: {TEXT}; font-weight: 700; }}
+        .stMarkdown, .stText, label, p {{ color: {TEXT}; }}
+        div[data-testid="stMetric"] {{
+            background-color: {SURFACE};
+            border: 1px solid {BORDER};
+            border-radius: 14px;
+            padding: 16px 18px;
+            box-shadow: {SHADOW};
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }}
+        div[data-testid="stMetric"]:hover {{
+            transform: translateY(-2px);
+            box-shadow: {SHADOW_HOVER};
+        }}
+        div[data-testid="stMetricValue"] {{ color: {ACCENT}; font-weight: 800; }}
+        div[data-testid="stMetricLabel"] {{ color: {TEXT_MUTED}; }}
         .stButton>button {{
-            background-color: {SPOTIFY_GREEN};
-            color: #000000;
+            background-color: {ACCENT};
+            color: #FFFFFF;
             border: none;
-            border-radius: 500px;
+            border-radius: 999px;
             font-weight: 700;
             padding: 0.5rem 1.4rem;
+            transition: background-color 0.2s ease, transform 0.15s ease;
         }}
-        .stButton>button:hover {{ background-color: #1ED760; color: #000000; }}
+        .stButton>button:hover {{
+            background-color: {ACCENT_HOVER};
+            color: #FFFFFF;
+            transform: translateY(-1px);
+        }}
+        .stButton>button[kind="secondary"] {{
+            background-color: {SURFACE};
+            color: {TEXT};
+            border: 1px solid {BORDER};
+        }}
+        .hero-banner {{
+            background: linear-gradient(135deg, {ACCENT_SOFT} 0%, {SURFACE} 55%, #F0FDF4 100%);
+            border: 1px solid {BORDER};
+            border-radius: 16px;
+            padding: 22px 26px;
+            margin-bottom: 20px;
+            box-shadow: {SHADOW};
+        }}
+        .hero-title {{ font-size: 1.55rem; font-weight: 800; color: {TEXT}; margin: 0 0 6px 0; }}
+        .hero-sub {{ color: {TEXT_MUTED}; font-size: 0.95rem; margin: 0; line-height: 1.5; }}
         .quote-card {{
-            background-color: {SPOTIFY_GREY};
-            border-left: 4px solid {SPOTIFY_GREEN};
-            border-radius: 8px;
-            padding: 12px 16px;
-            margin-bottom: 10px;
+            background-color: {SURFACE};
+            border: 1px solid {BORDER};
+            border-left: 4px solid {ACCENT};
+            border-radius: 12px;
+            padding: 14px 18px;
+            margin-bottom: 12px;
+            box-shadow: {SHADOW};
+            transition: box-shadow 0.2s ease;
         }}
-        .quote-meta {{ color: {SPOTIFY_LIGHT}; font-size: 0.8rem; }}
-        .stTabs [data-baseweb="tab-list"] {{ gap: 8px; }}
-        .stTabs [aria-selected="true"] {{ color: {SPOTIFY_GREEN}; }}
+        .quote-card:hover {{ box-shadow: {SHADOW_HOVER}; }}
+        .quote-meta {{ color: {TEXT_MUTED}; font-size: 0.82rem; margin-top: 8px; }}
+        .research-card {{
+            background-color: {SURFACE};
+            border: 1px solid {BORDER};
+            border-left: 4px solid {ACCENT};
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 14px;
+            box-shadow: {SHADOW};
+        }}
+        .research-lens {{ color: {TEXT_MUTED}; font-size: 0.92rem; line-height: 1.5; }}
+        .step-pill {{
+            display: inline-block;
+            background: {ACCENT_SOFT};
+            color: #047857;
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            margin-right: 8px;
+        }}
+        .stTabs [data-baseweb="tab-list"] {{ gap: 6px; background: transparent; }}
+        .stTabs [data-baseweb="tab"] {{
+            background: {SURFACE};
+            border: 1px solid {BORDER};
+            border-radius: 10px 10px 0 0;
+            padding: 8px 16px;
+        }}
+        .stTabs [aria-selected="true"] {{
+            color: {ACCENT};
+            border-bottom: 2px solid {ACCENT};
+            font-weight: 700;
+        }}
+        div[data-testid="stExpander"] {{
+            background: {SURFACE};
+            border: 1px solid {BORDER};
+            border-radius: 12px;
+        }}
+        .stRadio > label {{ font-weight: 600; color: {TEXT_MUTED}; }}
         </style>
         """,
         unsafe_allow_html=True,
+    )
+
+
+def hero_banner(title: str, subtitle: str, steps: list[str] | None = None) -> None:
+    steps_html = ""
+    if steps:
+        pills = "".join(f'<span class="step-pill">{s}</span>' for s in steps)
+        steps_html = f'<div style="margin-top:12px">{pills}</div>'
+    st.markdown(
+        f'<div class="hero-banner">'
+        f'<p class="hero-title">{title}</p>'
+        f'<p class="hero-sub">{subtitle}</p>{steps_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def sentiment_badge(sentiment: str) -> str:
+    key = (sentiment or "neutral").lower()
+    color = SENTIMENT_COLORS.get(key, TEXT_MUTED)
+    label = key.capitalize() if key else "Unknown"
+    return (
+        f'<span style="background:{color}22;color:{color};padding:2px 10px;'
+        f'border-radius:999px;font-size:0.75rem;font-weight:700;">{label}</span>'
     )
 
 
@@ -121,7 +284,20 @@ def _local_get(path: str, params: dict):
     if path == "/insights/segments":
         return svc.insights_segments(str(p.get("full", "false")).lower() in ("true", "1", "yes"))
     if path == "/insights/question":
-        return svc.insights_question(p.get("question", ""), p.get("segment"), p.get("source"))
+        try:
+            return svc.insights_question(p.get("question", ""), p.get("segment"), p.get("source"))
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "question": p.get("question", ""),
+                "insight": "Insight generation failed — showing cached or extractive data only.",
+                "confidence": 0.0,
+                "supporting_evidence": [],
+                "sample_size": 0,
+                "themes_identified": [],
+                "recommended_followup_questions": [],
+                "llm_fallback": True,
+                "llm_error": str(exc),
+            }
     if path == "/data/search":
         return svc.data_search(p.get("q"), p.get("source"), p.get("sentiment"),
                                p.get("rating"), p.get("theme"), int(p.get("limit", 50)))
@@ -150,6 +326,18 @@ def api_get(path: str, params: dict | None = None, timeout: int = 120):
         try:
             return _local_get(path, params or {})
         except Exception as exc:  # noqa: BLE001
+            if path == "/insights/question":
+                return {
+                    "question": (params or {}).get("question", ""),
+                    "insight": "Could not reach the insight engine.",
+                    "confidence": 0.0,
+                    "supporting_evidence": [],
+                    "sample_size": 0,
+                    "themes_identified": [],
+                    "recommended_followup_questions": [],
+                    "llm_fallback": True,
+                    "llm_error": str(exc),
+                }
             st.error(f"{path} failed: {exc}")
             return None
     try:
@@ -157,6 +345,18 @@ def api_get(path: str, params: dict | None = None, timeout: int = 120):
         resp.raise_for_status()
         return resp.json()
     except requests.RequestException as exc:
+        if path == "/insights/question":
+            return {
+                "question": (params or {}).get("question", ""),
+                "insight": "Could not reach insight API — using offline mode.",
+                "confidence": 0.0,
+                "supporting_evidence": [],
+                "sample_size": 0,
+                "themes_identified": [],
+                "recommended_followup_questions": [],
+                "llm_fallback": True,
+                "llm_error": str(exc),
+            }
         st.error(f"GET {path} failed: {exc}")
         return None
 
@@ -188,31 +388,425 @@ def _check_health() -> bool:
 
 
 def plotly_layout(fig):
-    """Apply the dark Spotify theme to a Plotly figure."""
+    """Apply the light theme to a Plotly figure."""
     fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor=SPOTIFY_BLACK,
-        plot_bgcolor=SPOTIFY_BLACK,
-        font_color="#FFFFFF",
+        template="plotly_white",
+        paper_bgcolor=SURFACE,
+        plot_bgcolor=BG,
+        font_color=TEXT,
         margin=dict(l=10, r=10, t=40, b=10),
+        colorway=GREEN_SCALE,
     )
     return fig
 
 
 def quote_card(quote: str, source: str = "", sentiment: str = "") -> None:
-    meta = " · ".join(p for p in [source, sentiment] if p and p != "n/a")
+    border = SENTIMENT_COLORS.get((sentiment or "").lower(), ACCENT)
+    badge = sentiment_badge(sentiment) if sentiment and sentiment != "n/a" else ""
+    meta_parts = [p for p in [source] if p]
+    meta = " · ".join(meta_parts)
     st.markdown(
-        f'<div class="quote-card">“{quote}”<br>'
-        f'<span class="quote-meta">{meta}</span></div>',
+        f'<div class="quote-card" style="border-left-color:{border}">'
+        f'"{quote}"<br>'
+        f'<span class="quote-meta">{meta} {badge}</span></div>',
         unsafe_allow_html=True,
     )
+
+
+def _render_question_picker() -> dict:
+    """Interactive grid of research question cards."""
+    if "dq_selected" not in st.session_state:
+        st.session_state["dq_selected"] = DISCOVERY_QUESTIONS[0]["id"]
+
+    st.markdown("##### Pick a research question")
+    cols = st.columns(3)
+    for i, q in enumerate(DISCOVERY_QUESTIONS):
+        selected = st.session_state["dq_selected"] == q["id"]
+        label = f"{q['icon']} {q['question'][:36]}{'…' if len(q['question']) > 36 else ''}"
+        btn_type = "primary" if selected else "secondary"
+        if cols[i % 3].button(label, key=f"qcard_{q['id']}", type=btn_type, use_container_width=True):
+            st.session_state["dq_selected"] = q["id"]
+            st.rerun()
+
+    return _question_by_id(st.session_state["dq_selected"])
+
+
+def _question_by_id(qid: str) -> dict:
+    return next(q for q in DISCOVERY_QUESTIONS if q["id"] == qid)
+
+
+def _fetch_insight(question: str, source: str | None = None, refresh: bool = False) -> dict:
+    """Always returns a dict — never None, never raises."""
+    cache_key = f"insight::{question}::{source or 'all'}"
+    if refresh and cache_key in st.session_state:
+        del st.session_state[cache_key]
+    if cache_key not in st.session_state:
+        src = source if source and source != "all" else None
+        with st.spinner("Synthesizing evidence-backed insight…"):
+            if _use_local():
+                try:
+                    result = svc.insights_question(question, source=src)
+                except Exception as exc:  # noqa: BLE001
+                    result = _empty_insight(question, str(exc))
+            else:
+                result = api_get("/insights/question", {"question": question, **({"source": src} if src else {})})
+                if not result:
+                    result = _empty_insight(question, "API request failed")
+        st.session_state[cache_key] = result or _empty_insight(question, "No result")
+    return st.session_state[cache_key]
+
+
+def _empty_insight(question: str, error: str = "") -> dict:
+    return {
+        "question": question,
+        "insight": "Fetch live reviews first, then analyze this question.",
+        "confidence": 0.0,
+        "supporting_evidence": [],
+        "sample_size": 0,
+        "themes_identified": [],
+        "recommended_followup_questions": [],
+        "llm_fallback": bool(error),
+        "llm_error": error,
+    }
+
+
+def _render_insight_block(result: dict, question: str = "", source: str = "all") -> None:
+    if result.get("llm_fallback") and result.get("llm_error"):
+        err = result.get("llm_error", "")
+        if "401" in err or "invalid api key" in err.lower():
+            st.warning(
+                "LLM API key rejected — showing review-based summary instead. "
+                "Update **GROQ_API_KEY** in Streamlit Secrets (Settings → Secrets), "
+                "set `LLM_PROVIDER=groq`, then reboot the app."
+            )
+        else:
+            st.warning(
+                "LLM synthesis unavailable — showing extractive summary from reviews. "
+                f"({err[:120]})"
+            )
+
+    tab_answer, tab_quotes, tab_next = st.tabs(["Answer", "Quotes", "Follow-ups"])
+    with tab_answer:
+        st.markdown(result.get("insight", ""))
+        m1, m2, m3 = st.columns(3)
+        conf = result.get("confidence", 0)
+        m1.metric("Confidence", f"{conf:.0%}")
+        m2.metric("Reviews analyzed", result.get("sample_size", 0))
+        m3.metric("Themes found", len(result.get("themes_identified") or []))
+        if result.get("themes_identified"):
+            st.markdown("**Key themes**")
+            theme_cols = st.columns(min(4, len(result["themes_identified"])))
+            for i, theme in enumerate(result["themes_identified"][:8]):
+                theme_cols[i % len(theme_cols)].markdown(
+                    f'<span style="background:{ACCENT_SOFT};color:#047857;padding:6px 12px;'
+                    f'border-radius:999px;font-size:0.85rem;font-weight:600;">{theme}</span>',
+                    unsafe_allow_html=True,
+                )
+
+    evidence = result.get("supporting_evidence", [])
+    with tab_quotes:
+        if evidence:
+            for ev in evidence[:8]:
+                quote_card(ev.get("quote", ""), ev.get("source", ""), ev.get("sentiment", ""))
+        else:
+            st.caption("No supporting quotes returned for this question.")
+
+    with tab_next:
+        followups = result.get("recommended_followup_questions") or []
+        if followups:
+            st.caption("Click a follow-up to explore it:")
+            for i, fq in enumerate(followups):
+                if st.button(fq, key=f"fu_{question[:24]}_{i}", use_container_width=True):
+                    st.session_state["custom_question"] = fq
+                    st.session_state["dq_run_custom"] = True
+                    st.rerun()
+        else:
+            st.caption("No follow-up questions suggested.")
+
+    if question and st.button("Refresh insight", key=f"refresh_{question[:24]}", type="secondary"):
+        _fetch_insight(question, source if source != "all" else None, refresh=True)
+        st.rerun()
+
+
+def _render_frustrations_block(top_k: int = 12) -> None:
+    data = api_get("/insights/frustrations", {"top_k": top_k})
+    items = (data or {}).get("frustrations", [])
+    if not items:
+        st.caption("No frustration patterns indexed yet.")
+        return
+    try:
+        import plotly.express as px
+
+        fig = px.bar(
+            x=[f["count"] for f in items],
+            y=[f["frustration"] for f in items],
+            orientation="h",
+            labels={"x": "Mentions", "y": "Frustration"},
+            color=[f["count"] for f in items],
+            color_continuous_scale="Greens",
+        )
+        fig.update_layout(yaxis={"categoryorder": "total ascending"}, showlegend=False)
+        st.plotly_chart(plotly_layout(fig), use_container_width=True)
+    except ImportError:
+        pass
+
+    labels = [f["frustration"] for f in items]
+    chosen = st.selectbox(
+        "Drill into a frustration",
+        labels,
+        index=0,
+        key=f"frust_pick_{top_k}",
+    )
+    st.markdown("#### Representative quotes")
+    for item in items:
+        if item["frustration"] != chosen:
+            continue
+        ex = item.get("example", {})
+        quote_card(ex.get("quote", item["frustration"]), ex.get("source", ""))
+        break
+
+
+def _render_themes_block(top_k: int = 15) -> None:
+    data = api_get("/insights/themes", {"top_k": top_k})
+    themes = (data or {}).get("themes", [])
+    if not themes:
+        st.caption("No themes indexed yet.")
+        return
+    try:
+        import plotly.express as px
+
+        fig = px.bar(
+            x=[t["count"] for t in themes],
+            y=[t["theme"] for t in themes],
+            orientation="h",
+            labels={"x": "Mentions", "y": "Theme"},
+            color=[t["count"] for t in themes],
+            color_continuous_scale="Greens",
+        )
+        fig.update_layout(yaxis={"categoryorder": "total ascending"}, showlegend=False)
+        st.plotly_chart(plotly_layout(fig), use_container_width=True)
+    except ImportError:
+        for t in themes[:10]:
+            st.write(f"- **{t['theme']}** ({t['count']})")
+
+    if themes:
+        chip_cols = st.columns(min(5, len(themes)))
+        for i, t in enumerate(themes[:10]):
+            if chip_cols[i % len(chip_cols)].button(
+                f"{t['theme']} ({t['count']})",
+                key=f"theme_chip_{top_k}_{i}",
+                use_container_width=True,
+            ):
+                st.session_state["theme_drill"] = t["theme"]
+        if st.session_state.get("theme_drill"):
+            st.markdown(f"**Reviews mentioning:** `{st.session_state['theme_drill']}`")
+            data = api_get(
+                "/data/search",
+                {"q": st.session_state["theme_drill"].replace("_", " "), "limit": 6},
+            )
+            for r in (data or {}).get("results", []):
+                meta = r.get("metadata", {})
+                quote_card(r["content"][:280], meta.get("source", ""), meta.get("sentiment", ""))
+
+
+def _render_behavior_themes() -> None:
+    behavior_keys = (
+        "mood", "playlist", "background", "workout", "study", "explore",
+        "discover", "genre", "social", "nostalg", "casual", "power",
+    )
+    data = api_get("/insights/themes", {"top_k": 40})
+    themes = (data or {}).get("themes", [])
+    matched = [
+        t for t in themes
+        if any(k in t["theme"].lower() for k in behavior_keys)
+    ]
+    if matched:
+        st.markdown("#### Behavior-related themes — click to explore")
+        bcols = st.columns(min(4, len(matched)))
+        for i, t in enumerate(matched[:12]):
+            if bcols[i % len(bcols)].button(
+                f"{t['theme']} ({t['count']})",
+                key=f"beh_{t['theme']}_{i}",
+                use_container_width=True,
+            ):
+                st.session_state["theme_drill"] = t["theme"]
+        if st.session_state.get("theme_drill"):
+            data = api_get(
+                "/data/search",
+                {"q": st.session_state["theme_drill"].replace("_", " "), "limit": 6},
+            )
+            for r in (data or {}).get("results", []):
+                meta = r.get("metadata", {})
+                quote_card(r["content"][:280], meta.get("source", ""), meta.get("sentiment", ""))
+    else:
+        _render_themes_block(12)
+
+
+def _render_repetitive_quotes() -> None:
+    data = api_get(
+        "/data/search",
+        {"q": "repetitive same songs discover weekly stale loop", "limit": 12},
+    )
+    results = (data or {}).get("results", [])
+    if not results:
+        st.caption("No repetition-related reviews found.")
+        return
+    for r in results:
+        meta = r.get("metadata", {})
+        quote_card(r["content"][:300], meta.get("source", ""), meta.get("sentiment", ""))
+
+
+def _render_segments_block(full_profiles: bool = False) -> None:
+    data = api_get("/insights/segments", {"full": str(full_profiles).lower()})
+    if not data:
+        return
+    sizes = data.get("sizes", {})
+    matrix = data.get("comparison_matrix", {})
+    profiles = {p["segment"]: p for p in data.get("profiles", [])}
+
+    st.markdown("#### Segment sizes")
+    cols = st.columns(4)
+    for i, (seg, info) in enumerate(sizes.items()):
+        cols[i % 4].metric(
+            seg.replace("_", " ").title(),
+            f"{info.get('pct', 0)}%",
+            f"{info.get('count', 0)} reviews",
+        )
+
+    problems = matrix.get("problems", [])
+    seg_matrix = matrix.get("matrix", {})
+    try:
+        import plotly.express as px
+
+        if problems and seg_matrix:
+            st.markdown("#### Discovery challenges by segment")
+            segs = list(seg_matrix.keys())
+            z = [[seg_matrix[s][p]["pct"] for p in problems] for s in segs]
+            fig = px.imshow(
+                z, x=problems, y=segs, color_continuous_scale="Greens",
+                labels=dict(color="% of segment mentioning problem"),
+            )
+            st.plotly_chart(plotly_layout(fig), use_container_width=True)
+    except ImportError:
+        pass
+
+    if full_profiles and profiles:
+        st.markdown("#### Segment profiles")
+        for seg in sizes:
+            prof = profiles.get(seg)
+            if not prof:
+                continue
+            with st.expander(seg.replace("_", " ").title()):
+                _bullets("Pain points", prof.get("discovery_pain_points"))
+                _bullets("Primary frustrations", prof.get("primary_frustrations"))
+                for q in prof.get("sample_quotes", [])[:2]:
+                    quote_card(q.get("quote", ""), q.get("source", ""))
+
+
+def page_discovery_questions() -> None:
+    hero_banner(
+        "Discovery Research Questions",
+        "Explore six evidence-backed questions about how users discover music on Spotify.",
+        ["1. Pick a question", "2. Filter & analyze", "3. Read quotes & evidence"],
+    )
+
+    spec = _render_question_picker()
+
+    st.markdown(
+        f'<div class="research-card">'
+        f'<strong>{spec["icon"]} Research lens</strong><br>'
+        f'<span class="research-lens">{spec["lens"]}</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    c1, c2, c3 = st.columns([2, 2, 1])
+    source = c1.selectbox(
+        "Source filter",
+        ["all", "app_store", "play_store", "reddit", "twitter"],
+        key="dq_source",
+    )
+    run = c2.button("Analyze this question", type="primary", use_container_width=True)
+    if c3.button("Clear cache", use_container_width=True):
+        keys = [k for k in st.session_state if k.startswith("insight::")]
+        for k in keys:
+            del st.session_state[k]
+        st.toast("Insight cache cleared")
+        st.rerun()
+
+    custom_q = st.session_state.pop("custom_question", None)
+    if st.session_state.pop("dq_run_custom", False) and custom_q:
+        st.markdown(f"**Exploring follow-up:** {custom_q}")
+        insight = _fetch_insight(custom_q, source if source != "all" else None)
+        _render_insight_block(insight, custom_q, source)
+        st.markdown("---")
+
+    if spec["id"] == "segment_challenges":
+        full = st.toggle("Include full LLM segment profiles (slower)", value=False)
+        tab_seg, tab_insight = st.tabs(["Segment evidence", "Synthesized answer"])
+        with tab_seg:
+            _render_segments_block(full_profiles=full)
+        with tab_insight:
+            if run:
+                insight = _fetch_insight(spec["question"], source if source != "all" else None)
+                _render_insight_block(insight, spec["question"], source)
+            else:
+                st.info("Click **Analyze this question** for a synthesized segment insight.")
+        with st.expander("Advanced: multi-question research agent"):
+            page_research_agent()
+        return
+
+    tab_insight, tab_evidence = st.tabs(["Synthesized answer", "Supporting evidence"])
+
+    with tab_insight:
+        if run:
+            insight = _fetch_insight(spec["question"], source if source != "all" else None)
+            _render_insight_block(insight, spec["question"], source)
+        else:
+            st.info("Click **Analyze this question** to generate an LLM-backed answer from your corpus.")
+
+    with tab_evidence:
+        for kind in spec["evidence"]:
+            if kind == "insight":
+                continue
+            if kind == "frustrations":
+                st.markdown("#### Frustration ranking")
+                _render_frustrations_block()
+            elif kind == "themes":
+                st.markdown("#### Related themes")
+                _render_themes_block()
+            elif kind == "behaviors":
+                _render_behavior_themes()
+            elif kind == "quotes_repetitive":
+                st.markdown("#### Repetition-related reviews")
+                _render_repetitive_quotes()
+            elif kind == "segments":
+                _render_segments_block(full_profiles=False)
+
+    with st.expander("Advanced: multi-question research agent"):
+        page_research_agent()
 
 
 # --------------------------------------------------------------------------- #
 # Pages
 # --------------------------------------------------------------------------- #
 def page_overview() -> None:
-    st.header("Overview")
+    hero_banner(
+        "Corpus Overview",
+        "See how healthy your review dataset is, then jump into guided research questions.",
+    )
+
+    st.markdown("##### Quick start — pick a research question")
+    qcols = st.columns(3)
+    for i, q in enumerate(DISCOVERY_QUESTIONS):
+        if qcols[i % 3].button(
+            f"{q['icon']} {q['question'][:40]}…" if len(q["question"]) > 40 else f"{q['icon']} {q['question']}",
+            key=f"ov_{q['id']}",
+            use_container_width=True,
+        ):
+            st.session_state["nav_choice"] = "Discovery Questions"
+            st.session_state["dq_selected"] = q["id"]
+            st.rerun()
+
     stats = api_get("/stats/overview")
     if not stats:
         st.info("No data yet. Ingest reviews via the API or the Raw Data page.")
@@ -240,7 +834,7 @@ def page_overview() -> None:
             fig = px.bar(
                 x=list(ratings.keys()), y=list(ratings.values()),
                 labels={"x": "Rating", "y": "Reviews"},
-                color_discrete_sequence=[SPOTIFY_GREEN],
+                color_discrete_sequence=[ACCENT],
             )
             st.plotly_chart(plotly_layout(fig), use_container_width=True)
     with right:
@@ -253,35 +847,39 @@ def page_overview() -> None:
             )
             st.plotly_chart(plotly_layout(fig), use_container_width=True)
 
-    st.subheader("Reviews by source")
-    if sources:
-        fig = px.bar(
-            x=list(sources.values()), y=list(sources.keys()), orientation="h",
-            labels={"x": "Reviews", "y": "Source"},
-            color_discrete_sequence=[SPOTIFY_GREEN],
-        )
-        st.plotly_chart(plotly_layout(fig), use_container_width=True)
-
-    st.subheader("Review volume over time")
-    timeline = api_get("/stats/timeline")
-    series = (timeline or {}).get("series", [])
-    if series:
-        fig = px.area(
-            x=[s["period"] for s in series], y=[s["count"] for s in series],
-            labels={"x": "Month", "y": "Reviews"},
-            color_discrete_sequence=[SPOTIFY_GREEN],
-        )
-        st.plotly_chart(plotly_layout(fig), use_container_width=True)
-    else:
-        st.caption("No dated reviews available for a timeline yet.")
-
-    st.subheader("Discovery term cloud")
-    themes = api_get("/insights/themes", {"top_k": 50})
-    freqs = {t["theme"]: t["count"] for t in (themes or {}).get("themes", [])}
-    if freqs:
-        render_wordcloud(freqs)
-    else:
-        st.caption("No themes available yet.")
+    chart_tab1, chart_tab2, chart_tab3 = st.tabs(["By source", "Over time", "Term cloud"])
+    with chart_tab1:
+        st.subheader("Reviews by source")
+        if sources:
+            fig = px.bar(
+                x=list(sources.values()), y=list(sources.keys()), orientation="h",
+                labels={"x": "Reviews", "y": "Source"},
+                color=list(sources.values()),
+                color_continuous_scale="Greens",
+            )
+            fig.update_layout(showlegend=False)
+            st.plotly_chart(plotly_layout(fig), use_container_width=True)
+    with chart_tab2:
+        st.subheader("Review volume over time")
+        timeline = api_get("/stats/timeline")
+        series = (timeline or {}).get("series", [])
+        if series:
+            fig = px.area(
+                x=[s["period"] for s in series], y=[s["count"] for s in series],
+                labels={"x": "Month", "y": "Reviews"},
+                color_discrete_sequence=[ACCENT],
+            )
+            st.plotly_chart(plotly_layout(fig), use_container_width=True)
+        else:
+            st.caption("No dated reviews available for a timeline yet.")
+    with chart_tab3:
+        st.subheader("Discovery term cloud")
+        themes = api_get("/insights/themes", {"top_k": 50})
+        freqs = {t["theme"]: t["count"] for t in (themes or {}).get("themes", [])}
+        if freqs:
+            render_wordcloud(freqs)
+        else:
+            st.caption("No themes available yet.")
 
 
 def render_wordcloud(freqs: dict) -> None:
@@ -293,17 +891,17 @@ def render_wordcloud(freqs: dict) -> None:
         st.json(freqs)
         return
     wc = WordCloud(
-        width=1000, height=320, background_color=SPOTIFY_BLACK, colormap="Greens",
+        width=1000, height=320, background_color=SURFACE, colormap="Greens",
     ).generate_from_frequencies(freqs)
     fig, ax = plt.subplots(figsize=(12, 4))
-    fig.patch.set_facecolor(SPOTIFY_BLACK)
+    fig.patch.set_facecolor(BG)
     ax.imshow(wc, interpolation="bilinear")
     ax.axis("off")
     st.pyplot(fig)
 
 
 def page_theme_explorer() -> None:
-    st.header("Theme Explorer")
+    """Themes tab content (used by Evidence Explorer)."""
     f1, f2, f3 = st.columns(3)
     source = f1.selectbox("Source", ["all", "app_store", "play_store", "reddit", "twitter"])
     sentiment = f2.selectbox("Sentiment", ["all", "positive", "negative", "neutral", "mixed"])
@@ -353,58 +951,30 @@ def page_theme_explorer() -> None:
             quote_card(r["content"][:280], meta.get("source", ""), meta.get("sentiment", ""))
 
 
-def page_insight_qa() -> None:
-    st.header("Insight Q&A")
-    st.caption("Ask anything about Spotify music discovery; answers are grounded in user reviews.")
-
-    prebuilt = [
-        "Why do users struggle to discover new music?",
-        "What are the most common recommendation frustrations?",
-        "Why do users repeatedly listen to the same content?",
-        "What unmet needs appear consistently across reviews?",
-    ]
-    st.write("**Quick questions**")
-    cols = st.columns(2)
-    for i, q in enumerate(prebuilt):
-        if cols[i % 2].button(q, key=f"pb_{i}"):
-            st.session_state["qa_question"] = q
-
-    question = st.text_input(
-        "Your question",
-        value=st.session_state.get("qa_question", ""),
-        placeholder="e.g. What do power users dislike about Discover Weekly?",
+def page_evidence_explorer() -> None:
+    hero_banner(
+        "Evidence Explorer",
+        "Filter themes and frustrations interactively — click chips and drill into quotes.",
     )
-    c1, c2 = st.columns(2)
-    source = c1.selectbox("Source filter", ["all", "app_store", "play_store", "reddit"])
-    segment = c2.text_input("Segment hint (optional)", "")
+    tab_themes, tab_frustrations = st.tabs(["Themes", "Frustrations"])
 
-    if st.button("Get insight", type="primary") and question:
-        params = {"question": question}
-        if source != "all":
-            params["source"] = source
-        if segment:
-            params["segment"] = segment
-        with st.spinner("Synthesizing insight..."):
-            result = api_get("/insights/question", params)
-        if result:
-            st.markdown("### Insight")
-            st.write(result.get("insight", ""))
-            m1, m2 = st.columns(2)
-            m1.metric("Confidence", f"{result.get('confidence', 0):.0%}")
-            m2.metric("Sample size", result.get("sample_size", 0))
-            if result.get("themes_identified"):
-                st.write("**Themes:** " + ", ".join(result["themes_identified"]))
-            st.markdown("#### Supporting evidence")
-            for ev in result.get("supporting_evidence", []):
-                quote_card(ev.get("quote", ""), ev.get("source", ""), ev.get("sentiment", ""))
-            if result.get("recommended_followup_questions"):
-                st.markdown("#### Follow-up questions")
-                for fq in result["recommended_followup_questions"]:
-                    st.write(f"- {fq}")
+    with tab_themes:
+        page_theme_explorer()
+    with tab_frustrations:
+        st.subheader("Top frustrations")
+        _render_frustrations_block(top_k=15)
+
+
+def page_insight_qa() -> None:
+    """Legacy — kept for imports; use Discovery Questions in the nav."""
+    page_discovery_questions()
 
 
 def page_segments() -> None:
-    st.header("Segment Analysis")
+    hero_banner(
+        "Segment Deep Dive",
+        "Compare how casual listeners, power users, and other segments experience discovery differently.",
+    )
     full = st.toggle("Include full LLM profiles (slower)", value=False)
     with st.spinner("Loading segments..."):
         data = api_get("/insights/segments", {"full": str(full).lower()})
@@ -501,11 +1071,9 @@ def _journey(profile: dict) -> None:
 
 
 def page_research_agent() -> None:
-    st.header("Research Agent")
     st.caption(
-        "The agent breaks each question into sub-questions, searches evidence, "
-        "forms hypotheses, and synthesizes a report. (Results stream when complete; "
-        "the API returns the final report.)"
+        "Breaks each question into sub-questions, searches evidence, "
+        "forms hypotheses, and synthesizes a report."
     )
     default_qs = "Why do users struggle to discover new music?\nWhat unmet needs appear consistently across reviews?"
     raw = st.text_area("Research questions (one per line)", value=default_qs, height=120)
@@ -566,9 +1134,8 @@ def _json_dumps(obj) -> str:
 
 
 def page_raw_data() -> None:
-    st.header("Raw Data")
-    st.caption("Search semantically or browse with filters.")
-    q = st.text_input("Search query (leave blank to browse)", "")
+    hero_banner("Raw Data", "Search and filter individual reviews from the indexed corpus.")
+    q = st.text_input("Search query (leave blank to browse)", "", placeholder="e.g. discover weekly repetitive")
     c1, c2, c3, c4 = st.columns(4)
     source = c1.selectbox("Source", ["all", "app_store", "play_store", "reddit", "twitter"])
     sentiment = c2.selectbox("Sentiment", ["all", "positive", "negative", "neutral", "mixed"])
@@ -615,16 +1182,17 @@ def page_raw_data() -> None:
 
 
 def page_live_reviews() -> None:
-    st.header("Live Reviews")
-    st.caption(
-        "Fetch real Spotify reviews from app stores and social sources, "
-        "then analyze them with VADER + your configured LLM."
+    hero_banner(
+        "Live Reviews",
+        "Fetch real Spotify reviews from app stores and social sources, then analyze with VADER + your LLM.",
+        ["Choose sources", "Fetch & analyze", "Explore insights"],
     )
 
     try:
         from processors.llm_client import llm_configured
         import os
 
+        bootstrap_env()
         provider = os.getenv("LLM_PROVIDER", "openai")
         if llm_configured():
             st.success(f"LLM ready ({provider}) — deep theme + sentiment analysis enabled.")
@@ -687,10 +1255,19 @@ def page_live_reviews() -> None:
         themes = result.get("theme_counts") or {}
         if themes:
             st.markdown("#### Top themes in this batch")
-            for theme, count in list(themes.items())[:10]:
-                st.write(f"- **{theme}** ({count})")
+            tcols = st.columns(min(5, len(themes)))
+            for i, (theme, count) in enumerate(list(themes.items())[:10]):
+                tcols[i % len(tcols)].metric(theme.replace("_", " ").title(), count)
 
-        st.markdown("Open **Overview** or **Raw Data** to explore the updated corpus.")
+        st.balloons()
+        st.markdown("**Next steps**")
+        n1, n2 = st.columns(2)
+        if n1.button("Go to Discovery Questions", type="primary", use_container_width=True):
+            st.session_state["nav_choice"] = "Discovery Questions"
+            st.rerun()
+        if n2.button("View Corpus Overview", use_container_width=True):
+            st.session_state["nav_choice"] = "Corpus Overview"
+            st.rerun()
 
 
 # --------------------------------------------------------------------------- #
@@ -700,25 +1277,55 @@ _DEFAULT_PAGE = "Live Reviews"
 
 PAGES = {
     "Live Reviews": page_live_reviews,
-    "Overview": page_overview,
-    "Theme Explorer": page_theme_explorer,
-    "Insight Q&A": page_insight_qa,
-    "Segment Analysis": page_segments,
-    "Research Agent": page_research_agent,
+    "Discovery Questions": page_discovery_questions,
+    "Corpus Overview": page_overview,
+    "Evidence Explorer": page_evidence_explorer,
+    "Segment Deep Dive": page_segments,
     "Raw Data": page_raw_data,
 }
 
 
 def main() -> None:
     inject_css()
-    st.sidebar.markdown(f"<h1 style='color:{SPOTIFY_GREEN}'>🎧 Discovery Analyzer</h1>", unsafe_allow_html=True)
+    st.sidebar.markdown(
+        f"<div style='padding:4px 0 12px 0'>"
+        f"<span style='font-size:1.6rem'>🎧</span> "
+        f"<span style='color:{ACCENT};font-weight:800;font-size:1.15rem'>Discovery Analyzer</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
     page_names = list(PAGES.keys())
     if "nav_choice" not in st.session_state:
         st.session_state["nav_choice"] = _DEFAULT_PAGE
 
     choice = st.sidebar.radio("Navigate", page_names, key="nav_choice")
+
+    st.sidebar.markdown("### Research questions")
+    for q in DISCOVERY_QUESTIONS:
+        short = f"{q['icon']} {q['question'][:38]}{'…' if len(q['question']) > 38 else ''}"
+        if st.sidebar.button(short, key=f"jump_{q['id']}", use_container_width=True):
+            st.session_state["nav_choice"] = "Discovery Questions"
+            st.session_state["dq_selected"] = q["id"]
+            st.rerun()
+
     st.sidebar.markdown("---")
+
+    try:
+        from processors.llm_client import auto_llm_provider, llm_configured
+        import os
+
+        bootstrap_env()
+        provider = auto_llm_provider() or os.getenv("LLM_PROVIDER", "—")
+        if llm_configured(provider if provider != "—" else None):
+            st.sidebar.success(f"LLM: {provider}")
+        else:
+            st.sidebar.warning(
+                "LLM key missing — insights use extractive summaries only. "
+                "Set GROQ_API_KEY + LLM_PROVIDER=groq in Secrets."
+            )
+    except Exception:
+        pass
 
     if _use_local():
         st.sidebar.info("Running in standalone mode (in-process engine)")

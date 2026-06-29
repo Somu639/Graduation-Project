@@ -28,11 +28,11 @@ DEFAULT_TOP_K = 20
 # Pre-built templates for common discovery questions.
 QUERY_TEMPLATES: dict[str, str] = {
     "discovery_struggle": "Why do users struggle to discover new music?",
-    "recommendation_frustrations": "What are the most common recommendation frustrations?",
+    "recommendation_frustrations": "What are the most common frustrations with recommendations?",
     "desired_behaviors": "What listening behaviors are users trying to achieve?",
-    "repetitive_listening": "Why do users repeatedly listen to the same content?",
-    "power_vs_casual": "How do power users differ from casual listeners in discovery needs?",
-    "unmet_needs": "What unmet needs appear consistently across reviews?",
+    "repetitive_listening": "What causes users to repeatedly listen to the same content?",
+    "segment_challenges": "Which user segments experience different discovery challenges?",
+    "unmet_needs": "What unmet needs emerge consistently across reviews?",
 }
 
 
@@ -55,6 +55,8 @@ class InsightResponse:
     sample_size: int = 0
     themes_identified: list[str] = field(default_factory=list)
     recommended_followup_questions: list[str] = field(default_factory=list)
+    llm_fallback: bool = False
+    llm_error: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -65,6 +67,8 @@ class InsightResponse:
             "sample_size": self.sample_size,
             "themes_identified": self.themes_identified,
             "recommended_followup_questions": self.recommended_followup_questions,
+            "llm_fallback": self.llm_fallback,
+            "llm_error": self.llm_error,
         }
 
 
@@ -127,12 +131,24 @@ class DiscoveryInsightEngine:
         temperature: float = 0.1,
     ) -> None:
         self.vector_store = vector_store or VectorStore()
-        self.provider = provider or os.getenv("LLM_PROVIDER", "anthropic")
+        self.provider = provider or os.getenv("LLM_PROVIDER", "groq")
         self.model = model
         self.temperature = temperature
         self._llm = None
+        self._llm_disabled = False
+        self._last_llm_error = ""
 
     # --- LLM ------------------------------------------------------------- #
+    def _effective_provider(self) -> str | None:
+        from processors.llm_client import auto_llm_provider
+
+        if self._llm_disabled:
+            return None
+        resolved = auto_llm_provider()
+        if resolved:
+            self.provider = resolved
+        return resolved
+
     def _get_llm(self):
         if self._llm is not None:
             return self._llm
@@ -158,14 +174,43 @@ class DiscoveryInsightEngine:
 
     def llm_available(self) -> bool:
         """True if an API key is configured for the selected provider."""
-        from processors.llm_client import llm_configured
+        return self._effective_provider() is not None
 
-        return llm_configured(self.provider)
+    def _invoke(self, prompt: str) -> str | None:
+        from processors.llm_client import chat_complete_safe, llm_configured
 
-    def _invoke(self, prompt: str) -> str:
-        from processors.llm_client import chat_complete
+        if self._llm_disabled:
+            return None
 
-        return chat_complete(prompt, temperature=self.temperature, provider=self.provider)
+        tried: set[str] = set()
+        candidates: list[str] = []
+        first = self._effective_provider()
+        if first:
+            candidates.append(first)
+        for p in ("groq", "openai", "anthropic"):
+            if p not in candidates and llm_configured(p):
+                candidates.append(p)
+
+        if not candidates:
+            self._last_llm_error = "No LLM API key configured."
+            return None
+
+        self._last_llm_error = ""
+        for provider in candidates:
+            if provider in tried:
+                continue
+            tried.add(provider)
+            text, err = chat_complete_safe(
+                prompt, temperature=self.temperature, provider=provider
+            )
+            if text:
+                self.provider = provider
+                return text
+            if err:
+                self._last_llm_error = err
+
+        self._llm_disabled = True
+        return None
 
     def _extractive_insight(self, question: str, results: list[dict]) -> InsightResponse:
         """Build a grounded insight WITHOUT an LLM (lexical/statistical only)."""
@@ -289,7 +334,20 @@ class DiscoveryInsightEngine:
             '  "recommended_followup_questions": list of 3 follow-up questions'
         )
 
-        parsed = _parse_json_object(self._invoke(prompt)) or {}
+        raw = self._invoke(prompt)
+        if not raw:
+            fallback = self._extractive_insight(question, results)
+            fallback.llm_fallback = True
+            fallback.llm_error = self._last_llm_error or "LLM unavailable"
+            return fallback
+
+        parsed = _parse_json_object(raw) or {}
+        if not parsed.get("insight"):
+            fallback = self._extractive_insight(question, results)
+            fallback.llm_fallback = True
+            fallback.llm_error = self._last_llm_error or "LLM returned empty response"
+            return fallback
+
         themes = parsed.get("themes_identified") or [
             t["theme"] for t in self._collect_themes(results)[:5]
         ]

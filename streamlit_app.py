@@ -17,6 +17,14 @@ try:
     load_dotenv(os.path.join(ROOT, ".env"))
 except ImportError:
     pass
+
+try:
+    from processors.llm_client import bootstrap_env
+
+    bootstrap_env()
+except Exception:
+    pass
+
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 _FRONTEND = os.path.join(ROOT, "frontend")

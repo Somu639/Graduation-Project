@@ -12,6 +12,10 @@ import os
 from collections import Counter
 from functools import lru_cache
 
+from processors.llm_client import bootstrap_env
+
+bootstrap_env()
+
 
 @lru_cache(maxsize=1)
 def _components():
@@ -129,7 +133,29 @@ def insights_question(question: str, segment: str | None = None, source: str | N
     engine = _components()[1]
     filters = {"source": source} if source else None
     phrased = f"For {segment} users: {question}" if segment else question
-    return engine.answer_question(phrased, top_k=20, filters=filters).to_dict()
+    try:
+        return engine.answer_question(phrased, top_k=20, filters=filters).to_dict()
+    except Exception as exc:  # noqa: BLE001 — never crash the UI on LLM errors
+        import logging
+
+        logging.getLogger(__name__).warning("insights_question failed: %s", exc)
+        results = engine._retrieve(phrased, top_k=20, filters=filters)  # noqa: SLF001
+        if results:
+            fallback = engine._extractive_insight(phrased, results)  # noqa: SLF001
+            fallback.llm_fallback = True
+            fallback.llm_error = str(exc)
+            return fallback.to_dict()
+        return {
+            "question": phrased,
+            "insight": "Could not generate an insight. Fetch live reviews first, then try again.",
+            "confidence": 0.0,
+            "supporting_evidence": [],
+            "sample_size": 0,
+            "themes_identified": [],
+            "recommended_followup_questions": [],
+            "llm_fallback": True,
+            "llm_error": str(exc),
+        }
 
 
 def data_search(q: str | None = None, source: str | None = None, sentiment: str | None = None,

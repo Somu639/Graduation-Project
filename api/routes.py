@@ -325,14 +325,34 @@ def insights_question(
     phrased = f"For {segment} users: {question}" if segment else question
 
     def produce():
-        return engine.answer_question(phrased, top_k=20, filters=filters).to_dict()
+        try:
+            return engine.answer_question(phrased, top_k=20, filters=filters).to_dict()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("insights_question LLM failed: %s", exc)
+            results = engine._retrieve(phrased, top_k=20, filters=filters)  # noqa: SLF001
+            if results:
+                fb = engine._extractive_insight(phrased, results)  # noqa: SLF001
+                fb.llm_fallback = True
+                fb.llm_error = str(exc)
+                return fb.to_dict()
+            return {
+                "question": phrased,
+                "insight": "No indexed feedback is available to answer this question.",
+                "confidence": 0.0,
+                "supporting_evidence": [],
+                "sample_size": 0,
+                "themes_identified": [],
+                "recommended_followup_questions": [],
+                "llm_fallback": True,
+                "llm_error": str(exc),
+            }
 
     key = CacheStore.make_key("insight", phrased, source or "all")
     try:
         return cached(key, produce)
     except Exception as exc:  # noqa: BLE001
         logger.exception("insights_question failed")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return produce()  # bypass cache on error; produce() handles fallback internally
 
 
 @router.get("/insights/themes", tags=["insights"])
