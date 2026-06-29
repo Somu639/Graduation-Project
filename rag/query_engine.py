@@ -156,15 +156,16 @@ class DiscoveryInsightEngine:
             )
         return self._llm
 
-    def _invoke(self, prompt: str) -> str:
-        response = self._get_llm().invoke(prompt)
-        return getattr(response, "content", str(response))
-
     def llm_available(self) -> bool:
         """True if an API key is configured for the selected provider."""
-        if self.provider == "anthropic":
-            return bool(os.getenv("ANTHROPIC_API_KEY"))
-        return bool(os.getenv("OPENAI_API_KEY"))
+        from processors.llm_client import llm_configured
+
+        return llm_configured(self.provider)
+
+    def _invoke(self, prompt: str) -> str:
+        from processors.llm_client import chat_complete
+
+        return chat_complete(prompt, temperature=self.temperature, provider=self.provider)
 
     def _extractive_insight(self, question: str, results: list[dict]) -> InsightResponse:
         """Build a grounded insight WITHOUT an LLM (lexical/statistical only)."""

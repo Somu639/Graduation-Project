@@ -164,9 +164,36 @@ class ExportRequest(BaseModel):
     title: str = "Spotify Music Discovery — Research Report"
 
 
+class FetchLiveRequest(BaseModel):
+    sources: list[str] = Field(default=["play_store"])
+    limit: int = Field(default=50, ge=1, le=200)
+    use_llm: bool = True
+    discovery_filter: bool = False
+
+
 class ScrapeRequest(BaseModel):
     sources: list[str] = Field(default=["app_store", "play_store"])
     limit: int = Field(default=100, ge=1, le=1000)
+
+
+@router.post("/data/fetch-live", tags=["data"])
+def fetch_live(req: FetchLiveRequest, request: Request) -> dict:
+    """Scrape live reviews, run LLM/VADER analysis, and index into the store."""
+    from pipelines.live_reviews import fetch_and_ingest
+
+    try:
+        summary = fetch_and_ingest(
+            req.sources,
+            req.limit,
+            get_vector_store(request),
+            use_llm=req.use_llm,
+            discovery_filter=req.discovery_filter,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("fetch-live failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    CACHE._mem.clear()
+    return summary
 
 
 # --------------------------------------------------------------------------- #

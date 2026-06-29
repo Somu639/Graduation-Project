@@ -161,6 +161,26 @@ def agent_research(questions: list[str]) -> dict:
     return DiscoveryResearchAgent(vector_store=vs, engine=engine).run_research_session(questions).to_dict()
 
 
+def fetch_live(
+    sources: list[str],
+    limit: int = 50,
+    *,
+    use_llm: bool = True,
+    discovery_filter: bool = False,
+) -> dict:
+    """Scrape live reviews, analyze with LLM/VADER, and index in-process."""
+    from pipelines.live_reviews import fetch_and_ingest
+
+    vs = _components()[0]
+    return fetch_and_ingest(
+        sources,
+        limit,
+        vs,
+        use_llm=use_llm,
+        discovery_filter=discovery_filter,
+    )
+
+
 def export_report(fmt: str = "markdown", title: str = "Spotify Discovery Research") -> dict:
     """Build a lightweight Markdown report string from in-process data."""
     stats = stats_overview()

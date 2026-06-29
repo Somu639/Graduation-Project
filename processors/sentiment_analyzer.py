@@ -141,8 +141,9 @@ class SentimentAnalyzer:
             '  "enthusiasm_indicators": list of short quoted phrases'
         )
         try:
-            response = self._get_llm().invoke(prompt)
-            content = getattr(response, "content", str(response))
+            from processors.llm_client import chat_complete
+
+            content = chat_complete(prompt, temperature=0)
             return _parse_json_object(content)
         except Exception as exc:  # noqa: BLE001
             logger.warning("LLM sentiment analysis failed: %s", exc)

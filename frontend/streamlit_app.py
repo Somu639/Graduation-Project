@@ -123,6 +123,13 @@ def _local_get(path: str, params: dict):
 def _local_post(path: str, body: dict):
     if path == "/data/seed":
         return svc.seed()
+    if path == "/data/fetch-live":
+        return svc.fetch_live(
+            body.get("sources", ["play_store"]),
+            int(body.get("limit", 50)),
+            use_llm=bool(body.get("use_llm", True)),
+            discovery_filter=bool(body.get("discovery_filter", False)),
+        )
     if path == "/agent/research":
         return svc.agent_research(body.get("research_questions", []))
     if path == "/export/report":
@@ -599,11 +606,82 @@ def page_raw_data() -> None:
                 quote_card(r["content"][:300], meta.get("source", ""), meta.get("sentiment", ""))
 
 
+def page_live_reviews() -> None:
+    st.header("Live Reviews")
+    st.caption(
+        "Fetch real Spotify reviews from app stores and social sources, "
+        "then analyze them with VADER + your configured LLM."
+    )
+
+    try:
+        from processors.llm_client import llm_configured
+        import os
+
+        provider = os.getenv("LLM_PROVIDER", "openai")
+        if llm_configured():
+            st.success(f"LLM ready ({provider}) — deep theme + sentiment analysis enabled.")
+        else:
+            st.warning(
+                "No LLM API key found. Reviews will use VADER sentiment + keyword themes only. "
+                "Set GROQ_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in `.env` or Streamlit Secrets."
+            )
+    except ImportError:
+        st.warning("LLM client unavailable — keyword analysis only.")
+
+    sources = st.multiselect(
+        "Sources",
+        ["play_store", "app_store", "reddit", "twitter"],
+        default=["play_store"],
+        help="Play Store works without extra API keys. Reddit/Twitter need credentials in .env.",
+    )
+    limit = st.slider("Reviews per source", min_value=10, max_value=100, value=30, step=10)
+    use_llm = st.checkbox("Use LLM for themes & sentiment", value=True)
+    discovery_filter = st.checkbox(
+        "App Store: discovery-keyword filter only",
+        value=False,
+        help="When enabled, App Store reviews must mention discovery-related terms.",
+    )
+
+    if st.button("Fetch & analyze live reviews", type="primary", disabled=not sources):
+        with st.spinner("Scraping and analyzing reviews — this may take a minute…"):
+            result = api_post(
+                "/data/fetch-live",
+                {
+                    "sources": sources,
+                    "limit": limit,
+                    "use_llm": use_llm,
+                    "discovery_filter": discovery_filter,
+                },
+                timeout=600,
+            )
+        if not result:
+            return
+
+        st.success(
+            f"Done — scraped {result.get('scraped', 0)}, "
+            f"processed {result.get('processed', 0)}, "
+            f"indexed {result.get('indexed', 0)}."
+        )
+        if result.get("llm_used"):
+            st.info("LLM analysis was applied to this batch.")
+        for warning in result.get("warnings") or []:
+            st.warning(warning)
+
+        themes = result.get("theme_counts") or {}
+        if themes:
+            st.markdown("#### Top themes in this batch")
+            for theme, count in list(themes.items())[:10]:
+                st.write(f"- **{theme}** ({count})")
+
+        st.markdown("Open **Overview** or **Raw Data** to explore the updated corpus.")
+
+
 # --------------------------------------------------------------------------- #
 # App shell
 # --------------------------------------------------------------------------- #
 PAGES = {
     "Overview": page_overview,
+    "Live Reviews": page_live_reviews,
     "Theme Explorer": page_theme_explorer,
     "Insight Q&A": page_insight_qa,
     "Segment Analysis": page_segments,

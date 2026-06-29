@@ -220,8 +220,9 @@ class ThemeExtractor:
 
         prompt = THEME_PROMPT.format(review_text=text)
         try:
-            response = self._get_llm().invoke(prompt)
-            content = getattr(response, "content", str(response))
+            from processors.llm_client import chat_complete
+
+            content = chat_complete(prompt, temperature=0)
             result = _parse_json_object(content) or {}
         except Exception as exc:  # noqa: BLE001
             logger.warning("LLM theme extraction failed: %s", exc)
