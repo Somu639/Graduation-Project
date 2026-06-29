@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -51,10 +50,6 @@ def scrape_live(
                 batch = RedditScraper().scrape(limit_per_query=limit)
                 collected += batch
             elif source == "twitter":
-                if not os.getenv("TWITTER_BEARER_TOKEN"):
-                    warnings.append("twitter: set TWITTER_BEARER_TOKEN in .env")
-                    source_counts[source] = 0
-                    continue
                 from scrapers.twitter_scraper import TwitterScraper
 
                 batch = TwitterScraper().scrape(max_results=limit)
