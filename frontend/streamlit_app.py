@@ -1,7 +1,7 @@
 """Spotify Discovery Analyzer - interactive Streamlit dashboard.
 
-Six pages (Overview, Theme Explorer, Insight Q&A, Segment Analysis, Research
-Agent, Raw Data) backed by the FastAPI service, with Spotify-inspired dark
+Six pages (Live Reviews, Overview, Theme Explorer, Insight Q&A, Segment Analysis,
+Research Agent, Raw Data) backed by the FastAPI service, with Spotify-inspired dark
 styling.
 
 Run with the API up:
@@ -696,9 +696,11 @@ def page_live_reviews() -> None:
 # --------------------------------------------------------------------------- #
 # App shell
 # --------------------------------------------------------------------------- #
+_DEFAULT_PAGE = "Live Reviews"
+
 PAGES = {
-    "Overview": page_overview,
     "Live Reviews": page_live_reviews,
+    "Overview": page_overview,
     "Theme Explorer": page_theme_explorer,
     "Insight Q&A": page_insight_qa,
     "Segment Analysis": page_segments,
@@ -710,7 +712,12 @@ PAGES = {
 def main() -> None:
     inject_css()
     st.sidebar.markdown(f"<h1 style='color:{SPOTIFY_GREEN}'>🎧 Discovery Analyzer</h1>", unsafe_allow_html=True)
-    choice = st.sidebar.radio("Navigate", list(PAGES.keys()))
+
+    page_names = list(PAGES.keys())
+    if "nav_choice" not in st.session_state:
+        st.session_state["nav_choice"] = _DEFAULT_PAGE
+
+    choice = st.sidebar.radio("Navigate", page_names, key="nav_choice")
     st.sidebar.markdown("---")
 
     if _use_local():
