@@ -40,6 +40,12 @@ API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
 # Force it with LOCAL_MODE=1, or force HTTP with USE_API=1.
 import local_service as svc  # noqa: E402  (after sys.path setup)
 from processors.llm_client import bootstrap_env, llm_configured  # noqa: E402
+from scrapers.source_registry import (  # noqa: E402
+    FETCH_SOURCES,
+    fetch_source_help,
+    normalize_sources,
+    source_label,
+)
 
 bootstrap_env()
 
@@ -412,7 +418,7 @@ def plotly_layout(fig):
 def quote_card(quote: str, source: str = "", sentiment: str = "") -> None:
     border = SENTIMENT_COLORS.get((sentiment or "").lower(), ACCENT)
     badge = sentiment_badge(sentiment) if sentiment and sentiment != "n/a" else ""
-    meta_parts = [p for p in [source] if p]
+    meta_parts = [source_label(source) if source else ""]
     meta = " · ".join(meta_parts)
     st.markdown(
         f'<div class="quote-card" style="border-left-color:{border}">'
@@ -732,6 +738,7 @@ def page_discovery_questions() -> None:
     source = c1.selectbox(
         "Source filter",
         ["all", "app_store", "play_store", "reddit", "twitter"],
+        format_func=lambda x: "All sources" if x == "all" else source_label(x),
         key="dq_source",
     )
     run = c2.button("Analyze this question", type="primary", use_container_width=True)
@@ -910,7 +917,11 @@ def render_wordcloud(freqs: dict) -> None:
 def page_theme_explorer() -> None:
     """Themes tab content (used by Evidence Explorer)."""
     f1, f2, f3 = st.columns(3)
-    source = f1.selectbox("Source", ["all", "app_store", "play_store", "reddit", "twitter"])
+    source = f1.selectbox(
+        "Source",
+        ["all", "app_store", "play_store", "reddit", "twitter"],
+        format_func=lambda x: "All sources" if x == "all" else source_label(x),
+    )
     sentiment = f2.selectbox("Sentiment", ["all", "positive", "negative", "neutral", "mixed"])
     top_k = f3.slider("Themes to show", 5, 50, 20)
 
@@ -1144,7 +1155,11 @@ def page_raw_data() -> None:
     hero_banner("Raw Data", "Search and filter individual reviews from the indexed corpus.")
     q = st.text_input("Search query (leave blank to browse)", "", placeholder="e.g. discover weekly repetitive")
     c1, c2, c3, c4 = st.columns(4)
-    source = c1.selectbox("Source", ["all", "app_store", "play_store", "reddit", "twitter"])
+    source = c1.selectbox(
+        "Source",
+        ["all", "app_store", "play_store", "reddit", "twitter"],
+        format_func=lambda x: "All sources" if x == "all" else source_label(x),
+    )
     sentiment = c2.selectbox("Sentiment", ["all", "positive", "negative", "neutral", "mixed"])
     rating = c3.selectbox("Rating", ["all", 1, 2, 3, 4, 5])
     limit = c4.slider("Max results", 10, 200, 50)
@@ -1191,7 +1206,8 @@ def page_raw_data() -> None:
 def page_live_reviews() -> None:
     hero_banner(
         "Live Reviews",
-        "Fetch real Spotify reviews from app stores and social sources, then analyze with VADER + your LLM.",
+        "Fetch Spotify feedback from app stores, community forums, and social media — "
+        "then analyze with VADER + your LLM.",
         ["Choose sources", "Fetch & analyze", "Explore insights"],
     )
 
@@ -1211,12 +1227,44 @@ def page_live_reviews() -> None:
     except ImportError:
         st.warning("LLM client unavailable — keyword analysis only.")
 
-    sources = st.multiselect(
-        "Sources",
-        ["play_store", "app_store", "reddit", "twitter"],
-        default=["play_store"],
-        help="All sources work without extra API keys. Twitter/X uses public syndication timelines.",
-    )
+    st.markdown("##### App stores")
+    store_cols = st.columns(2)
+    store_selected: list[str] = []
+    with store_cols[0]:
+        if st.checkbox(
+            FETCH_SOURCES["play_store"]["label"],
+            value=True,
+            key="src_play_store",
+        ):
+            store_selected.append("play_store")
+    with store_cols[1]:
+        if st.checkbox(
+            FETCH_SOURCES["app_store"]["label"],
+            value=False,
+            key="src_app_store",
+        ):
+            store_selected.append("app_store")
+
+    st.markdown("##### Community & social")
+    social_cols = st.columns(2)
+    with social_cols[0]:
+        if st.checkbox(
+            FETCH_SOURCES["community_forums"]["label"],
+            value=False,
+            key="src_community_forums",
+        ):
+            store_selected.append("community_forums")
+    with social_cols[1]:
+        if st.checkbox(
+            FETCH_SOURCES["social_media"]["label"],
+            value=False,
+            key="src_social_media",
+        ):
+            store_selected.append("social_media")
+
+    sources = normalize_sources(store_selected)
+    with st.expander("About review sources", expanded=False):
+        st.markdown(fetch_source_help())
     limit = st.slider("Reviews per source", min_value=10, max_value=100, value=30, step=10)
     use_llm = st.checkbox("Use LLM for themes & sentiment", value=True)
     discovery_filter = st.checkbox(
@@ -1247,7 +1295,7 @@ def page_live_reviews() -> None:
         if counts:
             st.markdown("#### Fetched per source")
             for src, n in counts.items():
-                st.write(f"- **{src}**: {n} reviews")
+                st.write(f"- **{source_label(src)}**: {n} reviews")
 
         st.success(
             f"Done — scraped {result.get('scraped', 0)}, "

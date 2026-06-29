@@ -202,28 +202,15 @@ def fetch_live(req: FetchLiveRequest, request: Request) -> dict:
 @router.post("/scrape", tags=["data"])
 def scrape(req: ScrapeRequest) -> dict:
     """Run the requested scrapers and return collected records."""
-    collected: list[dict] = []
-    try:
-        if "app_store" in req.sources:
-            from scrapers.app_store_scraper import AppStoreReviewScraper
+    from pipelines.live_reviews import scrape_live
 
-            collected += AppStoreReviewScraper().scrape(how_many=req.limit, keyword_filter=False)
-        if "play_store" in req.sources:
-            from scrapers.play_store_scraper import PlayStoreReviewScraper
-
-            collected += PlayStoreReviewScraper().scrape(how_many=req.limit, sort="newest")
-        if "reddit" in req.sources:
-            from scrapers.reddit_scraper import RedditScraper
-
-            collected += RedditScraper().scrape(limit_per_query=req.limit)
-        if "twitter" in req.sources:
-            from scrapers.twitter_scraper import TwitterScraper
-
-            collected += TwitterScraper().scrape(max_results=req.limit)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Scrape failed")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"count": len(collected), "records": collected}
+    records, warnings, source_counts = scrape_live(req.sources, req.limit)
+    return {
+        "count": len(records),
+        "records": records,
+        "source_counts": source_counts,
+        "warnings": warnings,
+    }
 
 
 def _process_reviews_job(job_id: str, payload: dict, state) -> None:

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_SOURCES = ("play_store", "app_store", "reddit", "twitter")
+SUPPORTED_SOURCES = ("play_store", "app_store", "reddit", "twitter", "community_forums", "social_media")
 
 
 def scrape_live(
@@ -24,6 +24,9 @@ def scrape_live(
     Returns:
         (records, warnings, source_counts) — per-source fetch counts and any warnings.
     """
+    from scrapers.source_registry import normalize_sources, source_label
+
+    sources = normalize_sources(sources)
     collected: list[dict] = []
     warnings: list[str] = []
     source_counts: dict[str, int] = {}
@@ -62,7 +65,9 @@ def scrape_live(
             count = len(collected) - before
             source_counts[source] = count
             if count == 0:
-                warnings.append(f"{source}: scraper returned 0 reviews (check network or filters)")
+                warnings.append(
+                    f"{source_label(source)}: scraper returned 0 reviews (check network or filters)"
+                )
         except ImportError as exc:
             warnings.append(f"{source}: missing dependency — {exc}")
             source_counts[source] = 0
