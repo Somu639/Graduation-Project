@@ -812,9 +812,7 @@ def page_overview() -> None:
             key=f"ov_{q['id']}",
             use_container_width=True,
         ):
-            st.session_state["nav_choice"] = "Discovery Questions"
-            st.session_state["dq_selected"] = q["id"]
-            st.rerun()
+            _goto_page("Discovery Questions", question_id=q["id"])
 
     stats = api_get("/stats/overview")
     if not stats:
@@ -1272,11 +1270,9 @@ def page_live_reviews() -> None:
         st.markdown("**Next steps**")
         n1, n2 = st.columns(2)
         if n1.button("Go to Discovery Questions", type="primary", use_container_width=True):
-            st.session_state["nav_choice"] = "Discovery Questions"
-            st.rerun()
+            _goto_page("Discovery Questions")
         if n2.button("View Corpus Overview", use_container_width=True):
-            st.session_state["nav_choice"] = "Corpus Overview"
-            st.rerun()
+            _goto_page("Corpus Overview")
 
 
 # --------------------------------------------------------------------------- #
@@ -1294,6 +1290,24 @@ PAGES = {
 }
 
 
+def _goto_page(page: str, *, question_id: str | None = None) -> None:
+    """Queue a page change — safe to call after widgets (applied on next rerun)."""
+    st.session_state["_pending_nav"] = page
+    if question_id:
+        st.session_state["_pending_dq"] = question_id
+    st.rerun()
+
+
+def _apply_pending_navigation() -> None:
+    """Apply queued navigation before rendering the sidebar radio."""
+    pending = st.session_state.pop("_pending_nav", None)
+    if pending in PAGES:
+        st.session_state["nav_choice"] = pending
+    dq = st.session_state.pop("_pending_dq", None)
+    if dq:
+        st.session_state["dq_selected"] = dq
+
+
 def main() -> None:
     inject_css()
     st.sidebar.markdown(
@@ -1308,15 +1322,15 @@ def main() -> None:
     if "nav_choice" not in st.session_state:
         st.session_state["nav_choice"] = _DEFAULT_PAGE
 
+    _apply_pending_navigation()
+
     choice = st.sidebar.radio("Navigate", page_names, key="nav_choice")
 
     st.sidebar.markdown("### Research questions")
     for q in DISCOVERY_QUESTIONS:
         short = f"{q['icon']} {q['question'][:38]}{'…' if len(q['question']) > 38 else ''}"
         if st.sidebar.button(short, key=f"jump_{q['id']}", use_container_width=True):
-            st.session_state["nav_choice"] = "Discovery Questions"
-            st.session_state["dq_selected"] = q["id"]
-            st.rerun()
+            _goto_page("Discovery Questions", question_id=q["id"])
 
     st.sidebar.markdown("---")
 
