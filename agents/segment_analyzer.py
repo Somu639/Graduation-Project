@@ -139,35 +139,50 @@ class SegmentAnalyzer:
     ) -> None:
         self.vector_store = vector_store or VectorStore()
         self.engine = engine or DiscoveryInsightEngine(vector_store=self.vector_store)
-        self.provider = provider or os.getenv("LLM_PROVIDER", "anthropic")
+        self.provider = provider or os.getenv("LLM_PROVIDER", "openai")
         self.model = model
         self.temperature = temperature
         self.segments = segments or SEGMENTS
-        self._llm = None
 
     # --- LLM ------------------------------------------------------------- #
-    def _get_llm(self):
-        if self._llm is not None:
-            return self._llm
-        if self.provider == "anthropic":
-            from langchain_anthropic import ChatAnthropic
-
-            self._llm = ChatAnthropic(
-                model=self.model or os.getenv("LLM_MODEL", "claude-3-5-sonnet-latest"),
-                temperature=self.temperature,
-            )
-        else:
-            from langchain_openai import ChatOpenAI
-
-            self._llm = ChatOpenAI(
-                model=self.model or os.getenv("LLM_MODEL", "gpt-4o-mini"),
-                temperature=self.temperature,
-            )
-        return self._llm
-
     def _invoke(self, prompt: str) -> str:
-        response = self._get_llm().invoke(prompt)
-        return getattr(response, "content", str(response))
+        from processors.llm_client import chat_complete
+
+        return chat_complete(
+            prompt, temperature=self.temperature, provider=self.provider
+        )
+
+    @staticmethod
+    def _extractive_profile_fields(evidence: list[dict]) -> dict:
+        """Build profile fields from evidence without an LLM."""
+        frustrations: Counter[str] = Counter()
+        features: Counter[str] = Counter()
+        for record in evidence:
+            text = (record.get("content") or "").lower()
+            meta = record.get("metadata", {})
+            for problem, keywords in DISCOVERY_PROBLEMS.items():
+                if any(k in text for k in keywords):
+                    frustrations[problem] += 1
+            for feature in ("discover weekly", "release radar", "daily mix", "radio", "playlist"):
+                if feature in text:
+                    features[feature] += 1
+            inds = meta.get("frustration_indicators")
+            if isinstance(inds, str):
+                for ind in (i.strip() for i in inds.split(",") if i.strip()):
+                    frustrations[ind] += 1
+        top_frustrations = [k for k, _ in frustrations.most_common(5)]
+        return {
+            "primary_frustrations": top_frustrations,
+            "desired_outcomes": ["better music discovery", "more variety"],
+            "discovery_pain_points": top_frustrations[:3],
+            "workarounds": [],
+            "features_mentioned": [k for k, _ in features.most_common(5)],
+            "recommendation_satisfaction": "unknown",
+            "good_discovery_definition": "",
+            "repetitive_triggers": [
+                k for k in top_frustrations if "repetit" in k or "same" in k
+            ],
+        }
 
     # --- classification & sizing ---------------------------------------- #
     def classify_review(self, text: str) -> list[str]:
@@ -229,8 +244,17 @@ class SegmentAnalyzer:
             "good_discovery_definition (string), repetitive_triggers (list), "
             "primary_frustrations (list), desired_outcomes (list)."
         )
-        parsed = _parse_json_object(self._invoke(prompt)) if evidence else {}
-        parsed = parsed or {}
+        parsed: dict = {}
+        if evidence:
+            from processors.llm_client import llm_configured
+
+            if llm_configured(self.provider):
+                try:
+                    parsed = _parse_json_object(self._invoke(prompt)) or {}
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("LLM segment profile failed for %s: %s", segment, exc)
+            if not parsed:
+                parsed = self._extractive_profile_fields(evidence)
 
         pct = (size_estimate or {}).get(segment, {}).get("pct", 0.0)
         return SegmentProfile(
