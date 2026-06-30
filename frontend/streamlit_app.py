@@ -41,8 +41,8 @@ API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
 import local_service as svc  # noqa: E402  (after sys.path setup)
 from aura_ui import (  # noqa: E402
     inject_aura_css,
-    render_aura_home,
     render_aura_sidebar_header,
+    render_product_home,
 )
 from processors.llm_client import bootstrap_env, llm_configured  # noqa: E402
 from scrapers.source_registry import (  # noqa: E402
@@ -164,7 +164,11 @@ DISCOVERY_QUESTIONS: list[dict] = [
     },
 ]
 
-st.set_page_config(page_title="Discovery Analyzer", page_icon="🎧", layout="wide")
+st.set_page_config(
+    page_title="Spotify AI-Powered Review Discovery Engine",
+    page_icon="🎧",
+    layout="wide",
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -1516,30 +1520,22 @@ def page_raw_data() -> None:
 
 
 def page_home() -> None:
-    """Aura AI Stitch home — live corpus stats woven into the design export."""
+    """Product home — gist, data sources, pipeline; charts and Q&A live in other tabs."""
     stats = api_get("/stats/overview")
-    themes_data = api_get("/insights/themes", {"top_k": 6})
-    themes = (themes_data or {}).get("themes", [])
-
-    if not stats or not stats.get("total_reviews"):
-        st.info(
-            "No reviews indexed yet. Use **New Discovery Session** in the sidebar "
-            "to fetch live reviews, then return here."
-        )
-
-    render_aura_home(stats, themes)
-
-    st.markdown("---")
-    st.markdown("#### Continue your research")
-    c1, c2, c3, c4 = st.columns(4)
-    if c1.button("Fetch reviews", use_container_width=True, type="primary"):
-        _goto_page("Live Reviews")
-    if c2.button("Discovery Lab", use_container_width=True):
-        _goto_page("Discovery Questions")
-    if c3.button("Segment analysis", use_container_width=True):
-        _goto_page("Segment Deep Dive")
-    if c4.button("Roadmap", use_container_width=True):
-        _goto_page("Conclusion")
+    indexed = (stats or {}).get("total_reviews", 0)
+    bootstrap_env()
+    render_product_home(
+        FETCH_SOURCES,
+        indexed_count=indexed,
+        llm_ready=llm_configured(),
+    )
+    if indexed:
+        st.markdown("#### Get started")
+        c1, c2 = st.columns(2)
+        if c1.button("Fetch more reviews", use_container_width=True, type="primary"):
+            _goto_page("Live Reviews")
+        if c2.button("Open Discovery Lab", use_container_width=True):
+            _goto_page("Discovery Questions")
 
 
 def page_live_reviews() -> None:

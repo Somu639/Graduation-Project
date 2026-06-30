@@ -163,6 +163,63 @@ def inject_aura_css() -> None:
             font-family: 'Hanken Grotesk', sans-serif;
             font-weight: 600;
           }
+          .home-hero-title {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 2rem;
+            font-weight: 800;
+            color: #006e2d;
+            margin: 0 0 8px 0;
+            line-height: 1.2;
+          }
+          .home-hero-sub {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 1.05rem;
+            color: #3d4a3d;
+            margin: 0;
+            max-width: 720px;
+            line-height: 1.55;
+          }
+          .home-card {
+            background: rgba(255,255,255,0.85);
+            border: 1px solid #bccbb9;
+            border-radius: 16px;
+            padding: 18px 20px;
+            height: 100%;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.04);
+          }
+          .home-card h4 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #006e2d;
+            margin: 0 0 6px 0;
+          }
+          .home-card p {
+            font-size: 0.9rem;
+            color: #3d4a3d;
+            margin: 0;
+            line-height: 1.5;
+          }
+          .home-pipeline-step {
+            background: #ffffff;
+            border-left: 4px solid #006e2d;
+            border-radius: 0 12px 12px 0;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+          }
+          .home-pipeline-step strong {
+            color: #006e2d;
+            font-family: 'Hanken Grotesk', sans-serif;
+          }
+          .home-nav-row {
+            padding: 10px 0;
+            border-bottom: 1px solid #e8ede7;
+          }
+          .home-nav-row:last-child { border-bottom: none; }
+          .home-nav-label {
+            font-weight: 700;
+            color: #006e2d;
+          }
         </style>
         """,
         unsafe_allow_html=True,
@@ -172,11 +229,134 @@ def inject_aura_css() -> None:
 def render_aura_sidebar_header() -> None:
     st.markdown(
         """
-        <p class="aura-brand-title">Discovery Analyzer</p>
-        <p class="aura-brand-sub">Discovery Mode</p>
+        <p class="aura-brand-title">Spotify Discovery Engine</p>
+        <p class="aura-brand-sub">AI-Powered Review Research</p>
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_product_home(
+    fetch_sources: dict[str, dict[str, str]],
+    *,
+    indexed_count: int = 0,
+    llm_ready: bool = False,
+) -> None:
+    """Home tab — product intro, data sources, pipeline; no charts or tab duplicates."""
+    st.markdown(
+        """
+        <p class="home-hero-title">Spotify AI-Powered Review Discovery Engine</p>
+        <p class="home-hero-sub">
+          Collects real public feedback about Spotify music discovery, analyzes it with NLP and LLMs,
+          and turns it into cited insights for product research and graduation-project evaluation.
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("")
+
+    left, right = st.columns([3, 2], gap="large")
+
+    with left:
+        st.markdown("#### What this analyzer is for")
+        st.markdown(
+            "Users talk about discovery everywhere — app store ratings, Reddit threads, and social posts. "
+            "This engine gathers that scattered feedback, normalizes it into one corpus, and helps you "
+            "investigate **why discovery breaks down** (repetition, irrelevant recommendations, lack of control) "
+            "with answers grounded in actual review text — not generic assumptions."
+        )
+        st.markdown(
+            "It is built as an end-to-end research pipeline: **fetch → clean & score → embed → retrieve → synthesize**. "
+            "Use it to support UX and product decisions with evidence, segment-level comparisons, and a prioritized feature roadmap."
+        )
+
+        st.markdown("#### How analysis works")
+        for title, body in (
+            (
+                "1 · Collect",
+                "Live scrapers pull Spotify-related reviews from the sources below. "
+                "Each review is stored in a unified schema regardless of origin.",
+            ),
+            (
+                "2 · Understand",
+                "Text is cleaned, language-detected, and scored with VADER sentiment. "
+                "Discovery-related phrases and themes are tagged automatically.",
+            ),
+            (
+                "3 · Index",
+                "Reviews are embedded and indexed for semantic search so you can find "
+                "relevant evidence by meaning, not just keywords.",
+            ),
+            (
+                "4 · Investigate",
+                "A RAG layer retrieves matching reviews and synthesizes prose answers "
+                "with quotes, confidence, and pain points for structured research questions.",
+            ),
+        ):
+            st.markdown(
+                f'<div class="home-pipeline-step"><strong>{title}</strong><br/>{body}</div>',
+                unsafe_allow_html=True,
+            )
+
+    with right:
+        st.markdown("#### Where reviews are fetched from")
+        by_category: dict[str, list[tuple[str, str]]] = {}
+        source_notes = {
+            "play_store": "Public Android app reviews — no API key required.",
+            "app_store": "Public iOS app reviews from the Apple App Store.",
+            "community_forums": "Discovery-related posts from music subreddits (Reddit API credentials).",
+            "social_media": "Recent public posts about Spotify discovery on X / Twitter (bearer token).",
+        }
+        for sid, meta in fetch_sources.items():
+            cat = meta.get("category", "Other")
+            by_category.setdefault(cat, []).append((meta["label"], source_notes.get(sid, "")))
+
+        for category, items in by_category.items():
+            st.caption(category.upper())
+            for label, note in items:
+                st.markdown(
+                    f'<div class="home-card" style="margin-bottom:10px">'
+                    f'<h4>{label}</h4><p>{note}</p></div>',
+                    unsafe_allow_html=True,
+                )
+
+        st.caption(
+            "All sources are **public user-generated content**. "
+            "This tool does not access Spotify internal analytics or private listening data."
+        )
+
+    st.markdown("---")
+
+    st.markdown("#### Where to go in this dashboard")
+    nav_guide = [
+        ("New Discovery Session", "Pull fresh reviews and run analysis to build your session corpus."),
+        ("Discovery Lab", "Six research questions with AI-synthesized answers, pain points, and quotes."),
+        ("Library", "Charts and counts for the indexed corpus — sentiment, sources, themes."),
+        ("Search", "Semantic evidence search across all indexed reviews."),
+        ("Segments", "Listener-type profiles and how discovery pain differs by segment."),
+        ("AI Roadmap", "RICE-scored feature prioritization from corpus patterns."),
+        ("Raw Data", "Browse and filter individual review records."),
+    ]
+    ncols = st.columns(2)
+    for i, (label, desc) in enumerate(nav_guide):
+        with ncols[i % 2]:
+            st.markdown(
+                f'<div class="home-nav-row">'
+                f'<span class="home-nav-label">{label}</span> — {desc}</div>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("---")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Reviews in session", indexed_count if indexed_count else "—")
+    c2.metric("LLM synthesis", "Ready" if llm_ready else "Extractive mode")
+    c3.metric("Research questions", "6 structured")
+    if not indexed_count:
+        st.info(
+            "No reviews indexed yet. Open **New Discovery Session** in the sidebar to fetch "
+            "from app stores or community sources, then explore the other tabs."
+        )
 
 
 def aura_nav_labels() -> list[str]:
