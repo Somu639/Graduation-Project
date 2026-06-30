@@ -1,233 +1,327 @@
 <!DOCTYPE html>
 
-<html class="dark" lang="en"><head>
+<html class="light" lang="en"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>AI-Powered Review Discovery Engine - Overview</title>
+<title>Aura AI - Home</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@600&amp;family=Plus+Jakarta+Sans:wght@400;500;700;800&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            "colors": {
-                    "on-secondary-fixed-variant": "#00531f",
-                    "primary-fixed": "#72fe8f",
-                    "primary-container": "#1db954",
-                    "on-secondary-fixed": "#002108",
-                    "on-primary-fixed": "#002108",
-                    "primary": "#53e076",
-                    "tertiary-fixed": "#e4e2e1",
-                    "background": "#131313",
-                    "secondary": "#3de96f",
-                    "on-tertiary-fixed": "#1b1c1c",
-                    "on-tertiary-fixed-variant": "#474746",
-                    "on-primary": "#003914",
-                    "secondary-fixed": "#69ff89",
-                    "on-error": "#690005",
-                    "on-tertiary-container": "#383838",
-                    "on-tertiary": "#303030",
-                    "secondary-container": "#00cc57",
-                    "primary-fixed-dim": "#53e076",
-                    "surface-container-highest": "#353534",
-                    "on-primary-fixed-variant": "#005320",
-                    "surface-container": "#201f1f",
-                    "on-error-container": "#ffdad6",
-                    "surface-dim": "#131313",
-                    "surface-container-low": "#1c1b1b",
-                    "on-background": "#e5e2e1",
-                    "inverse-on-surface": "#313030",
-                    "secondary-fixed-dim": "#34e36a",
-                    "tertiary": "#c8c6c5",
-                    "on-secondary": "#003913",
-                    "on-secondary-container": "#004f1d",
-                    "inverse-surface": "#e5e2e1",
-                    "tertiary-container": "#a2a1a1",
-                    "surface-bright": "#393939",
-                    "surface-tint": "#53e076",
-                    "tertiary-fixed-dim": "#c8c6c5",
-                    "error-container": "#93000a",
-                    "on-surface": "#e5e2e1",
-                    "surface-variant": "#353534",
-                    "outline": "#869585",
-                    "surface-container-lowest": "#0e0e0e",
-                    "on-surface-variant": "#bccbb9",
-                    "on-primary-container": "#004118",
-                    "error": "#ffb4ab",
-                    "inverse-primary": "#006e2d",
-                    "surface": "#131313",
-                    "outline-variant": "#3d4a3d",
-                    "surface-container-high": "#2a2a2a"
-            },
-            "borderRadius": {
-                    "DEFAULT": "0.25rem",
-                    "lg": "0.5rem",
-                    "xl": "0.75rem",
-                    "full": "9999px"
-            },
-            "spacing": {
-                    "gutter": "24px",
-                    "container-margin": "32px",
-                    "stack-md": "16px",
-                    "stack-lg": "32px",
-                    "stack-sm": "8px",
-                    "card-padding": "24px"
-            },
-            "fontFamily": {
-                    "label-md": ["Inter"],
-                    "label-sm": ["Inter"],
-                    "body-lg": ["Inter"],
-                    "headline-md": ["Inter"],
-                    "headline-sm": ["Inter"],
-                    "headline-lg": ["Inter"],
-                    "display-lg": ["Inter"],
-                    "body-md": ["Inter"]
-            },
-            "fontSize": {
-                    "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
-                    "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
-                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
-                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
-                    "headline-sm": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
-                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
-                    "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
-                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#f8f9fa",
+                        "on-primary-fixed-variant": "#005320",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-fixed": "#1a1c1c",
+                        "secondary-fixed-dim": "#cfc4c4",
+                        "background": "#f8f9fa",
+                        "error-container": "#ffdad6",
+                        "surface-bright": "#f8f9fa",
+                        "on-primary-fixed": "#002108",
+                        "on-error": "#ffffff",
+                        "secondary-fixed": "#ebe0df",
+                        "on-surface-variant": "#3d4a3d",
+                        "surface-tint": "#006e2d",
+                        "tertiary-fixed": "#e2e2e2",
+                        "tertiary-container": "#a0a1a1",
+                        "surface-container-low": "#f3f4f5",
+                        "secondary-container": "#e8dddd",
+                        "primary-fixed-dim": "#53e076",
+                        "outline": "#6d7b6c",
+                        "inverse-primary": "#53e076",
+                        "surface-container": "#edeeef",
+                        "on-error-container": "#93000a",
+                        "tertiary": "#5d5f5f",
+                        "on-primary-container": "#004118",
+                        "primary-fixed": "#72fe8f",
+                        "surface-container-highest": "#e1e3e4",
+                        "tertiary-fixed-dim": "#c6c6c7",
+                        "on-tertiary-container": "#363838",
+                        "outline-variant": "#bccbb9",
+                        "error": "#ba1a1a",
+                        "on-surface": "#191c1d",
+                        "surface-dim": "#d9dadb",
+                        "secondary": "#645d5c",
+                        "surface-variant": "#e1e3e4",
+                        "on-secondary-container": "#696161",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed": "#201a1a",
+                        "on-secondary-fixed-variant": "#4c4545",
+                        "inverse-on-surface": "#f0f1f2",
+                        "on-tertiary-fixed-variant": "#454747",
+                        "inverse-surface": "#2e3132",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-high": "#e7e8e9",
+                        "on-background": "#191c1d",
+                        "primary-container": "#1db954",
+                        "on-primary": "#ffffff",
+                        "primary": "#006e2d"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-padding-desktop": "32px",
+                        "container-padding-mobile": "16px",
+                        "unit": "8px",
+                        "gutter": "24px",
+                        "card-gap": "16px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "headline-lg-mobile": ["Plus Jakarta Sans"],
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "display-lg": ["Plus Jakarta Sans"],
+                        "body-lg": ["Plus Jakarta Sans"],
+                        "body-md": ["Plus Jakarta Sans"],
+                        "label-md": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "700" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }]
+                    }
+                }
             }
-          },
-        },
-      }
+        }
     </script>
 <style>
-        body {
-            background-color: #121212;
-            color: #e5e2e1;
-            font-family: 'Inter', sans-serif;
-        }
-        .glass-card {
-            background: #181818;
-            border: 1px solid rgba(255,255,255,0.05);
-            transition: all 0.3s ease;
-        }
-        .glass-card:hover {
-            background: #202020;
-            border-color: rgba(29, 185, 84, 0.3);
-        }
-        .spotify-green-gradient {
-            background: linear-gradient(180deg, #1DB954 0%, #191414 100%);
-        }
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-            vertical-align: middle;
         }
-        .active-tab-indicator {
-            width: 4px;
-            height: 4px;
-            background-color: #1DB954;
-            border-radius: 50%;
-            margin: 4px auto 0;
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
         }
-        ::-webkit-scrollbar {
-            width: 8px;
+        body {
+            background-color: #F8F9FA;
+            color: #191c1d;
         }
-        ::-webkit-scrollbar-track {
-            background: #121212;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #333;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #1DB954;
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
         }
     </style>
 </head>
-<body class="min-h-screen flex flex-col md:flex-row">
-<!-- Sidebar Navigation (Desktop) -->
-<aside class="hidden lg:flex flex-col h-screen w-64 sticky top-0 bg-surface-container p-4 border-r border-outline-variant">
-<div class="mb-10 px-2 flex items-center gap-2">
-<span class="material-symbols-outlined text-primary text-3xl">headphones</span>
-<span class="text-primary font-headline-sm font-bold">Research Console</span>
+<body class="antialiased overflow-x-hidden min-h-screen">
+<!-- SideNavBar (Desktop) -->
+<nav class="hidden md:flex h-screen w-64 fixed left-0 top-0 bg-surface-container-lowest dark:bg-surface-container-lowest border-r border-outline-variant flex-col z-50">
+<div class="p-6">
+<h1 class="font-display-lg text-display-lg text-primary dark:text-primary-fixed-dim">Aura AI</h1>
+<p class="font-label-md text-label-md text-on-surface-variant mt-1 uppercase tracking-wider">Discovery Mode</p>
 </div>
-<nav class="flex-1 space-y-2">
-<a class="flex items-center gap-3 px-4 py-3 bg-surface-container-high text-primary rounded-lg font-label-md transition-transform active:scale-[0.98]" href="#">
-<span class="material-symbols-outlined">dashboard</span>
-                Overview
-            </a>
-<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-highest rounded-lg font-label-md transition-colors" href="#">
-<span class="material-symbols-outlined">search</span>
-                Discovery Search
-            </a>
-<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-highest rounded-lg font-label-md transition-colors" href="#">
-<span class="material-symbols-outlined">topic</span>
-                Theme Explorer
-            </a>
-<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-highest rounded-lg font-label-md transition-colors" href="#">
-<span class="material-symbols-outlined">groups</span>
-                Segment Analysis
-            </a>
-<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-highest rounded-lg font-label-md transition-colors" href="#">
-<span class="material-symbols-outlined">quiz</span>
-                Insight Q&amp;A
-            </a>
-<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-highest rounded-lg font-label-md transition-colors" href="#">
+<div class="px-4 py-2">
+<button class="w-full py-3 px-4 bg-primary-container text-on-primary-container rounded-full font-label-md text-label-md font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined fill">add</span>
+                New Discovery Session
+            </button>
+</div>
+<ul class="flex-1 mt-6 space-y-1">
+<li>
+<a class="flex items-center gap-4 text-primary font-bold border-r-4 border-primary px-4 py-3 bg-surface-container-low" href="#">
+<span class="material-symbols-outlined fill">home</span>
+<span class="font-body-md text-body-md">Home</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-4 text-on-surface-variant px-4 py-3 hover:bg-surface-container-low transition-colors" href="#">
 <span class="material-symbols-outlined">smart_toy</span>
-                Research Agent
-            </a>
-</nav>
-<div class="mt-auto pt-6 border-t border-outline-variant px-2">
+<span class="font-body-md text-body-md">AI DJ</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-4 text-on-surface-variant px-4 py-3 hover:bg-surface-container-low transition-colors" href="#">
+<span class="material-symbols-outlined">science</span>
+<span class="font-body-md text-body-md">Discovery Lab</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-4 text-on-surface-variant px-4 py-3 hover:bg-surface-container-low transition-colors" href="#">
+<span class="material-symbols-outlined">library_music</span>
+<span class="font-body-md text-body-md">Library</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-4 text-on-surface-variant px-4 py-3 hover:bg-surface-container-low transition-colors" href="#">
+<span class="material-symbols-outlined">search</span>
+<span class="font-body-md text-body-md">Search</span>
+</a>
+</li>
+</ul>
+<div class="p-6 border-t border-outline-variant">
 <div class="flex items-center gap-3">
-<div class="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center overflow-hidden">
-<img class="w-full h-full object-cover" data-alt="A professional studio portrait of a modern UX researcher with a clean-cut look, wearing a minimalist dark turtleneck, set against a dark moody background with subtle green rim lighting to match the Spotify aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBa1jDP1Ex9oRxs5SFUz4gV61vNXlX9AoDsz4-jvr-D2A26ruZVLGDI5jdm2cMxWqNxSsD51_g2RpYx3qLYErEizgdIrfUPpH1Tx7BIAHTyVCIDhGnSa_aUpuvydRvKYifcjiXwwGIGOqM61WNnukvYaYPPGoBcghu_teN-lQHZS1if8on9fsi78XAPMkq9vOfYoIQXy1niCIJfS-G7c1pG0ENxOgZYCeKw38NpBWg3tA-qVGfnCMBD"/>
+<div class="w-10 h-10 rounded-full bg-surface-container-high overflow-hidden">
+<img alt="User profile" class="w-full h-full object-cover" data-alt="A close up portrait photo of a young adult looking directly at the camera. The photo is well lit with soft, natural lighting creating a modern, clean aesthetic. The background is slightly blurred, emphasizing the subject's features. The overall mood is approachable and professional, suitable for a profile avatar in a sleek application." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB3WoqDsUt0hoT_ZadinnWBdy0ITAVVzYej-YS7r8osXhXK-TjFbx-QDpTXEiwQQvv7CiB0B_YSqzRgqc_riofcrfGooymNQjYdOfkJ1k7c_PFeZl5fa4nvyeUNEhN4GCQmOpNRY6uxTO17M-IkY57HnRguxBO5bIj4066Iah6fEjgbJ08YdfyC1ISduHrKSoGPyIgQxPTmsQcThVWH9YHQJl24U2wbGxC0s3Nc7Qe6IHHtFotKv8RRaOiyaIDRjiukYHmFK9UjS5e7"/>
 </div>
 <div>
-<p class="font-label-md text-on-surface">Alex Chen</p>
-<p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Product Owner</p>
+<p class="font-body-md text-body-md font-bold text-on-surface">User Profile</p>
+<p class="font-label-md text-label-md text-on-surface-variant">Free Account</p>
 </div>
 </div>
 </div>
-</aside>
-<!-- Main Content Canvas -->
-<main class="flex-1 flex flex-col min-h-screen overflow-x-hidden">
-<!-- Top App Bar (JSON Informed) -->
-<header class="sticky top-0 z-50 flex justify-between items-center w-full px-container-margin py-4 bg-surface-container-low border-b border-outline-variant">
-<div class="flex items-center gap-4 lg:hidden">
-<span class="material-symbols-outlined text-primary">headphones</span>
+</nav>
+<!-- TopNavBar (Desktop) -->
+<header class="hidden md:flex fixed top-0 right-0 w-[calc(100%-16rem)] z-40 bg-surface/80 dark:bg-surface/80 backdrop-blur-md items-center justify-between px-container-padding-desktop py-4">
+<div class="flex items-center gap-6">
+<h2 class="font-headline-md text-headline-md text-on-surface hidden">Aura AI</h2>
+<div class="relative w-96 focus-within:ring-2 focus-within:ring-primary rounded-full">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-lowest border border-outline-variant text-on-surface font-body-md text-body-md rounded-full py-2 pl-12 pr-4 focus:outline-none placeholder-on-surface-variant/50" placeholder="Describe the vibe you want..." type="text"/>
 </div>
-<div class="hidden md:block">
-<h1 class="font-headline-sm font-bold text-on-surface">AI-Powered Review Discovery Engine</h1>
 </div>
-<div class="flex items-center gap-4">
-<button class="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full bg-primary-container text-on-primary-container font-label-md hover:opacity-80 transition-all">
-                    Load sample data
-                </button>
-<button class="flex items-center gap-2 px-4 py-2 rounded-full border border-outline-variant text-on-surface-variant font-label-md hover:text-primary transition-colors">
-<span class="material-symbols-outlined text-sm">refresh</span>
-                    Refresh
-                </button>
-<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary">sensors</span>
+<nav class="flex items-center gap-6">
+<a class="font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">Focus</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">Energy</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">Era</a>
+<button class="bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md text-label-md font-bold py-2 px-4 rounded-full hover:bg-surface-container-low transition-colors ml-4">
+                Create Prompt
+            </button>
+<div class="flex items-center gap-3 border-l border-outline-variant pl-6">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
 </div>
+</nav>
 </header>
-<!-- Dashboard Canvas -->
-<div class="p-container-margin space-y-stack-lg max-w-7xl mx-auto w-full">
-<!-- Metric Cards Row -->
-<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter">
-<div class="glass-card p-card-padding rounded-xl">
-<p class="font-label-md text-on-surface-variant mb-2">Total Reviews</p>
-<h2 class="font-display-lg text-headline-lg text-on-surface">42,892</h2>
-<div class="mt-4 flex items-center gap-2 text-primary font-label-sm">
-<span class="material-symbols-outlined text-sm">trending_up</span>
-<span>+12.5% this month</span>
+<!-- Main Content Canvas -->
+<main class="md:ml-64 pt-24 pb-32 md:pb-12 px-container-padding-mobile md:px-container-padding-desktop min-h-screen">
+<!-- Welcome Section -->
+<section class="mb-12">
+<div class="flex items-end justify-between mb-8">
+<div>
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-on-surface">Good evening, <span class="text-primary">Alex</span></h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant mt-2">Your sonic aura is currently <strong class="text-primary-container">Mellow &amp; Focused</strong>. Here's what we discovered.</p>
+</div>
+<div class="hidden md:flex gap-2">
+<span class="px-3 py-1 bg-surface-container-lowest rounded-full font-label-md text-label-md text-on-surface-variant">Ambient</span>
+<span class="px-3 py-1 bg-surface-container-lowest rounded-full font-label-md text-label-md text-on-surface-variant">Lo-Fi</span>
+<span class="px-3 py-1 bg-surface-container-lowest rounded-full font-label-md text-label-md text-on-surface-variant">Deep Focus</span>
 </div>
 </div>
-<div class="glass-card p-card-padding rounded-xl">
-<p class="font-label-md text-on-surface-variant mb-2">Average Rating</p>
-<div class="flex items-baseline gap-1">
-<h2 class="font-display-lg text-headline-lg text-on-surface">4.2</h2>
-<span class="text-on-surface-variant font-headline-sm">/ 5.0</span>
+<!-- Bento Grid Discovery -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Hero Card -->
+<div class="md:col-span-2 glass-card rounded-2xl overflow-hidden relative group cursor-pointer h-80">
+<div class="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105" data-alt="A lush, abstract landscape depicting soundwaves turning into rolling hills under a bright, airy sky. The colors are predominantly soft whites, light greys, and vibrant energetic green accents. The scene has a clean, modern vector art style, evoking a sense of calm discovery and futuristic intelligence. The lighting is soft and diffused, creating a serene mood." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDhDK0JoIGhT_1O33yknMF6rg-KzaahO9ceJfuoQNoj_apjL0rif5pdHr15MyyX6pDGBLUQFd1VfITRGG4iXAOuQ0Ub50kKP_fl8MgHxHmelLxI3b4j0M9EYmXM-KpJ2a4xkrjy6llHrDUv4-a0uhhYnOHzGn4iZ0aZ4lEpls-1rO4mxxiVwCxiaKtDh0drQAFM7JYlW_MppGPepxXeRb9gjo7qQxCJ5PqQIBusnp7n3pOKT1HxYJhTqUroILBOBuXQ0W6LXTPqSQpO')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface/90 via-surface/40 to-transparent"></div>
+<div class="absolute bottom-0 left-0 p-6 w-full">
+<span class="px-3 py-1 bg-primary text-on-primary rounded-full font-label-md text-label-md mb-3 inline-block">AI Generated Playlist</span>
+<h3 class="font-headline-lg-mobile md:font-headline-lg text-on-surface mb-1">Cerebral Synapse</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-4">Neural-network curated ambient textures for deep, uninterrupted workflow.</p>
+<button class="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-on-primary shadow-lg transform translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
+<span class="material-symbols-outlined fill text-2xl">play_arrow</span>
+</button>
 </div>
-<div class="mt-4 flex gap-1">
-<span class="material-symbols-outlined text-primary text-sm" style="font-variation-settings: 'FILL' 1;">star</span>
-</div></div></section></div></main></body></html>
+</div>
+<!-- Secondary Card -->
+<div class="glass-card rounded-2xl overflow-hidden relative group cursor-pointer h-80 flex flex-col">
+<div class="h-1/2 w-full relative">
+<div class="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105" data-alt="A surreal, minimalist composition showing floating geometric shapes in a bright white studio space. Spheres and cubes in muted tones are highlighted by a single, sharp light source casting soft shadows. The aesthetic is clean, modern, and highly polished, representing clarity and intelligent design. Small pops of vibrant green add energy to the scene." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCInKp8-VNjp2K7tJ8pCnSeixqicxfjcH-1QwzZA7grJw5eG78mXEyw3qgVLZWF2F9ss3bqjXG0u__L4NRDmX4cmhoQIQtn1IrPWTxTDsDazMOf1Oa5gAEKB_SRAhSs3VoPtbj_WbYuVPADXoqLitreL6CA-Vkz-Au8LSC4diZPmwijSYketzPyTcbSbgtxpOdhec44KMhq8tGfcKxRD0HsMOaWtzZRqEZUeEDfygucafCRGH3ABrt1CffzJJePduFFEYUhk7QQDRZf')"></div>
+</div>
+<div class="p-6 flex-1 bg-surface-container-lowest flex flex-col justify-between">
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-1">Morning Coffee Acoustic</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Based on your Tuesday listening habits.</p>
+</div>
+<div class="flex justify-between items-center mt-4">
+<div class="flex -space-x-2">
+<div class="w-6 h-6 rounded-full bg-surface-container-high border-2 border-surface-container-lowest"></div>
+<div class="w-6 h-6 rounded-full bg-surface-container-high border-2 border-surface-container-lowest"></div>
+<div class="w-6 h-6 rounded-full bg-surface-container-high border-2 border-surface-container-lowest"></div>
+</div>
+<span class="material-symbols-outlined text-primary">play_circle</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Discover by Mood (Shelves) -->
+<section>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-6">Discover by Vibe</h3>
+<div class="flex overflow-x-auto pb-6 -mx-4 px-4 md:mx-0 md:px-0 space-x-6 hide-scrollbar">
+<!-- Mood Card 1 -->
+<div class="min-w-[200px] flex-shrink-0 group cursor-pointer">
+<div class="w-full aspect-square rounded-2xl bg-surface-container-lowest border border-outline-variant overflow-hidden mb-3 relative">
+<div class="absolute inset-0 bg-cover bg-center opacity-80 group-hover:scale-110 transition-transform duration-500" data-alt="A vibrant, abstract representation of high energy music. Swirling patterns of bright, electric green and pure white create a sense of dynamic movement. The style is modern, sleek, and energetic, resembling digital soundwaves bursting outwards. The lighting is high-key, maintaining the light-mode aesthetic while feeling intense and driving." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDurz9LbM6Rh_C8cKFDaqOMhZKUB5s7mzpJfx-mWXRkEV81ozIqDVNAMhrG2kb9vaKgWs8MthRFD2UKKNnOueHfaAmnoUQUwgnPI9h60hmo3PW1tYjSB69ePCvhBG8p58BNpah6IO3kI8rBogtrc599fkNhT0z3wRFxS4VjOWuthxZB_abwUyfPKQ7y86Wqu-QyT7y1uZZbU9H1HIQ5Soz6JZLp7CbE4qQUmXP80P5z6uslCWBbuedKWHn2CIpoFfpg9rRY1UwSSobm')"></div>
+<div class="absolute inset-0 bg-gradient-to-b from-transparent to-surface/80"></div>
+</div>
+<h4 class="font-body-lg text-body-lg text-on-surface font-bold">Hyper-Focus</h4>
+<p class="font-body-md text-body-md text-on-surface-variant">140 BPM instrumental</p>
+</div>
+<!-- Mood Card 2 -->
+<div class="min-w-[200px] flex-shrink-0 group cursor-pointer">
+<div class="w-full aspect-square rounded-2xl bg-surface-container-lowest border border-outline-variant overflow-hidden mb-3 relative">
+<div class="absolute inset-0 bg-cover bg-center opacity-80 group-hover:scale-110 transition-transform duration-500" data-alt="A serene, minimalist visual representing relaxation. Soft, undulating gradients of pale grey, soft white, and very subtle mint green blend seamlessly. The aesthetic is smooth, airy, and deeply calming, resembling a digital sunrise over a calm sea. The high-key lighting ensures it perfectly fits a modern light-mode interface." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDeA9BQxThWCHloOYsOGANl9IyWLR6j-I9gI7zDN-6gCM57mox0t0aiUTFdkO6YORlWPVPd78zDgAqrFT0ljE0WgaUqStBnoHrDU98kGmI0sXpxv-OphqsamVnQqPM0TIh9cDbAMY6-vuzKY-kCMkZPYlW77GABeTxHmJjGmsm586FfEysVatW7xveU4vvOQ8-BifVjvy8_cdqb3mEPkdf8heeJ1cApJSveUSroAdscPHI9GAQZqE86oKdhf6gf6h9cDSzW8QdFV9K0')"></div>
+<div class="absolute inset-0 bg-gradient-to-b from-transparent to-surface/80"></div>
+</div>
+<h4 class="font-body-lg text-body-lg text-on-surface font-bold">Ethereal Drift</h4>
+<p class="font-body-md text-body-md text-on-surface-variant">Floating soundscapes</p>
+</div>
+<!-- Mood Card 3 -->
+<div class="min-w-[200px] flex-shrink-0 group cursor-pointer">
+<div class="w-full aspect-square rounded-2xl bg-surface-container-lowest border border-outline-variant overflow-hidden mb-3 relative">
+<div class="absolute inset-0 bg-cover bg-center opacity-80 group-hover:scale-110 transition-transform duration-500" data-alt="A geometric, structured abstract piece representing rhythmic complexity. Precise, intersecting lines and clean shapes in monochromatic tones with occasional sharp green accents. The style is architectural and intelligent, conveying a sense of order and sophisticated beat structures. Bright, crisp lighting emphasizes clarity." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCRYR8cP9RWR0HtAoj5yi2KdGqrG6qxXnKanGZN__tVS9dKqt4X9bI7OceMlZIJNk1Hr_WLHmaDwWyU6rKUK2ZtdcCjfcnEWXb46Nykn6_FlPoSkdhE2KznE7c6RJCyMwthpTRnMZL86Ktxr9_mHcLEPg56Fg0DOiXB9NsynDtL5kvOjzbtZoTOnvihxFIcAnjH4DNBjcLkyG7083NgAHcOcs8obmYxUfRJjh3iqA_Vf4iCFeQKuPgFUp4Su-95lI4BfcWyyKDNKc02')"></div>
+<div class="absolute inset-0 bg-gradient-to-b from-transparent to-surface/80"></div>
+</div>
+<h4 class="font-body-lg text-body-lg text-on-surface font-bold">Algorithmic Beats</h4>
+<p class="font-body-md text-body-md text-on-surface-variant">AI generated percussion</p>
+</div>
+<!-- Mood Card 4 -->
+<div class="min-w-[200px] flex-shrink-0 group cursor-pointer">
+<div class="w-full aspect-square rounded-2xl bg-surface-container-lowest border border-outline-variant overflow-hidden mb-3 relative">
+<div class="absolute inset-0 bg-cover bg-center opacity-80 group-hover:scale-110 transition-transform duration-500" data-alt="A warm, nostalgic abstract scene. Sun-drenched, blurry bokeh lights in soft yellows and crisp whites over a subtle vintage texture. The vibe is cozy and organic, contrasting with the digital nature of the platform but maintaining the overarching light and airy aesthetic. High-key illumination keeps it modern." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAl7ZbAtRzCSlorEwYoqrFy33gX7Z4afQ3Ukd9Ig9Z5IODJA8HiyF8N5NwVsNF9Y_Zo2eLNEAQe7bYb-c9K-mp6M4iiXj5C7BLroZMchNSiQHBY8X2JgjgroJ-QRLdrcThCroLQT6tzk4rceJfocQKssrDzQck4_EKSbGM0Z2BedIdv5Y9dT1x5v4ACmLS6Xuql2_3kNChiWG4JL4bsxQreF3cDg5NfDFCoqpTTtWq_Pk2XPWEDjjFE_nk39Z8LjYlt02SD9iBGoSXX')"></div>
+<div class="absolute inset-0 bg-gradient-to-b from-transparent to-surface/80"></div>
+</div>
+<h4 class="font-body-lg text-body-lg text-on-surface font-bold">Analog Warmth</h4>
+<p class="font-body-md text-body-md text-on-surface-variant">Vinyl rips &amp; tape hiss</p>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 h-24 bg-surface-container-highest dark:bg-surface-container-highest flex items-center justify-around px-4 shadow-[0_-4px_24px_rgba(0,0,0,0.05)]">
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-6 py-1 active:scale-98 transition-all" href="#">
+<span class="material-symbols-outlined fill">home</span>
+<span class="font-label-md text-label-md mt-1">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-high rounded-full px-4 py-2 active:scale-98 transition-all" href="#">
+<span class="material-symbols-outlined">auto_awesome</span>
+<span class="font-label-md text-label-md mt-1">AI DJ</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-high rounded-full px-4 py-2 active:scale-98 transition-all" href="#">
+<span class="material-symbols-outlined">experiment</span>
+<span class="font-label-md text-label-md mt-1">Lab</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-high rounded-full px-4 py-2 active:scale-98 transition-all" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-label-md text-label-md mt-1">Library</span>
+</a>
+</nav>
+<style>
+        /* Utility for hiding scrollbar but keeping functionality */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</body></html>

@@ -5,9 +5,13 @@ about Spotify's music **discovery experience** (Discover Weekly, Release Radar,
 recommendations, autoplay) and turns it into actionable product insights using a
 **RAG + multi-agent** architecture.
 
-**Live app (Streamlit):** deploy via [Streamlit Community Cloud](https://share.streamlit.io/) with entry point `streamlit_app.py` at the repo root.
+**Static web UI (Stitch export):** `screens/stitch_ai_review_discovery_dashboard/code.html` is the source design. It is copied to `frontend/web/index.html` for the FastAPI static dashboard. After updating the Stitch zip, run:
 
-**Static web UI:** Stitch design export lives at `frontend/web/index.html` (also mirrored under `screens/`).
+```powershell
+.\scripts\sync_screens_frontend.ps1
+```
+
+**Important:** [Streamlit Community Cloud](https://share.streamlit.io/) runs `streamlit_app.py` (the Python research console), not the HTML in `screens/`. To see the Stitch HTML UI locally, run `uvicorn api.main:app --reload` and open `http://localhost:8000/`.
 
 ## Features
 
