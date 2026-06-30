@@ -129,6 +129,99 @@ def _parse_json_object(raw: str) -> dict | None:
     return None
 
 
+def _normalize_string_list(items) -> list[str]:
+    """Drop empty entries and strip stray quotes from list fields."""
+    if not items:
+        return []
+    out: list[str] = []
+    for item in items:
+        if item is None:
+            continue
+        s = str(item).strip().strip('"').strip("'")
+        if s and s not in ('""', "''"):
+            out.append(s)
+    return out
+
+
+def _strip_json_artifacts(text: str) -> str:
+    """Remove trailing JSON keys if the model appended structured fields to prose."""
+    cleaned = text.strip()
+    for key in ("themes_identified", "recommended_followup_questions"):
+        cleaned = re.sub(
+            rf'\s*[,|]?\s*"{key}".*$',
+            "",
+            cleaned,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+    return cleaned.strip().strip('"').strip("'")
+
+
+def _extract_loose_json_fields(raw: str) -> dict:
+    """Best-effort parse when the model returns invalid JSON (e.g. unquoted insight)."""
+    parsed = _parse_json_object(raw)
+    if parsed:
+        return parsed
+
+    out: dict = {}
+    insight_match = re.search(
+        r'"insight"\s*:\s*("(?:\\.|[^"\\])*"|([^,\n\}\]]+))',
+        raw,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if insight_match:
+        if insight_match.group(1).startswith('"'):
+            out["insight"] = json.loads(insight_match.group(1))
+        else:
+            out["insight"] = insight_match.group(2).strip().strip('"').strip("'")
+
+    themes_match = re.search(
+        r'"themes_identified"\s*:\s*\[(.*?)\]',
+        raw,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if themes_match:
+        out["themes_identified"] = _normalize_string_list(
+            re.findall(r'"((?:\\.|[^"\\])*)"', themes_match.group(1))
+        )
+
+    followups_match = re.search(
+        r'"recommended_followup_questions"\s*:\s*\[(.*?)\]',
+        raw,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if followups_match:
+        out["recommended_followup_questions"] = _normalize_string_list(
+            re.findall(r'"((?:\\.|[^"\\])*)"', followups_match.group(1))
+        )
+
+    return out
+
+
+def _normalize_insight(raw: str | None) -> str | None:
+    """Turn any LLM output into display-ready prose (never raw JSON)."""
+    if not raw or not str(raw).strip():
+        return None
+
+    text = str(raw).strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text).strip()
+
+    loose = _extract_loose_json_fields(text)
+    if loose.get("insight"):
+        return _strip_json_artifacts(str(loose["insight"]))
+
+    extracted = _insight_from_llm_raw(text)
+    if extracted:
+        return _strip_json_artifacts(extracted)
+
+    if text.startswith("{") and '"insight"' in text[:200]:
+        return None
+
+    cleaned = _strip_json_artifacts(text)
+    return cleaned if len(cleaned) >= 40 else None
+
+
 def _insight_from_llm_raw(raw: str) -> str | None:
     """Extract an insight string from LLM output (JSON or plain prose)."""
     parsed = _parse_json_object(raw)
@@ -260,9 +353,8 @@ class DiscoveryInsightEngine:
             f"Research question: {question}\n\nUser reviews:\n{context}\n\n"
             "Write a clear, meaningful answer in 4-6 sentences that synthesizes patterns "
             "across the reviews. Explain what users struggle with, why it matters, and what "
-            "they want from discovery. Use flowing paragraphs only — do NOT open with "
-            "statistics like 'Across X reviews' or percentage breakdowns. Ground every claim "
-            "in the reviews provided."
+            "they want from discovery. Use flowing paragraphs only — do NOT use JSON, bullet "
+            "lists, or statistics like 'Across X reviews'. Ground every claim in the reviews."
         )
         return self._invoke(prompt)
 
@@ -397,14 +489,16 @@ class DiscoveryInsightEngine:
 
         context = self._format_context(results)
         prompt = (
-            "You are a senior product insights analyst for Spotify's music "
-            "discovery experience. Using ONLY the user feedback below, answer the "
-            "question with a concise, evidence-grounded insight.\n\n"
-            f"Question: {question}\n\nFeedback:\n{context}\n\n"
-            "Return ONLY valid JSON with keys:\n"
-            '  "insight": a 2-4 sentence synthesized insight\n'
-            '  "themes_identified": list of short theme strings\n'
-            '  "recommended_followup_questions": list of 3 follow-up questions'
+            "You are a senior UX researcher analyzing Spotify music discovery feedback.\n\n"
+            f"Research question: {question}\n\nUser reviews:\n{context}\n\n"
+            "Write a clear, meaningful answer in 4-6 sentences that synthesizes patterns "
+            "across the reviews. Explain what users are trying to achieve, what frustrates "
+            "them, and what they want from discovery.\n\n"
+            "Rules:\n"
+            "- Plain English paragraphs only\n"
+            "- Do NOT use JSON, bullet lists, or key-value format\n"
+            "- Do NOT open with statistics like 'Across X reviews'\n"
+            "- Ground every claim in the reviews provided"
         )
 
         raw = self._invoke(prompt)
@@ -414,11 +508,11 @@ class DiscoveryInsightEngine:
             fallback.llm_error = self._last_llm_error or "LLM unavailable"
             return fallback
 
-        insight_text = _insight_from_llm_raw(raw)
-        parsed = _parse_json_object(raw) or {}
+        insight_text = _normalize_insight(raw)
+        loose = _extract_loose_json_fields(raw)
 
         if not insight_text:
-            insight_text = self._synthesize_prose_insight(question, context)
+            insight_text = _normalize_insight(self._synthesize_prose_insight(question, context))
 
         if not insight_text:
             fallback = self._extractive_insight(question, results)
@@ -426,10 +520,10 @@ class DiscoveryInsightEngine:
             fallback.llm_error = self._last_llm_error or "Could not parse LLM response"
             return fallback
 
-        themes = parsed.get("themes_identified") or [
-            t["theme"] for t in self._collect_themes(results)[:5]
+        themes = _normalize_string_list(loose.get("themes_identified")) or [
+            t["theme"].replace("_", " ") for t in self._collect_themes(results)[:5]
         ]
-        followups = parsed.get("recommended_followup_questions") or [
+        followups = _normalize_string_list(loose.get("recommended_followup_questions")) or [
             q for q in QUERY_TEMPLATES.values() if q != question
         ][:3]
 
@@ -481,6 +575,8 @@ class DiscoveryInsightEngine:
             f"{theme_list}.\n\nFeedback:\n{self._format_context(results)}"
         )
         summary = self._invoke(prompt)
+        if summary:
+            summary = _normalize_insight(summary) or summary
         return ThemeSummary(
             query=query, summary=summary, themes=themes, sample_size=len(results)
         )

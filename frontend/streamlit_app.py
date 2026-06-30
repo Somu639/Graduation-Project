@@ -46,6 +46,7 @@ from scrapers.source_registry import (  # noqa: E402
     normalize_sources,
     source_label,
 )
+from rag.query_engine import _normalize_insight, _normalize_string_list  # noqa: E402
 
 bootstrap_env()
 
@@ -507,6 +508,33 @@ def _question_by_id(qid: str) -> dict:
     return next(q for q in DISCOVERY_QUESTIONS if q["id"] == qid)
 
 
+def _clean_insight_result(result: dict) -> dict:
+    """Sanitize insight text and list fields for display."""
+    if not result:
+        return result
+    out = dict(result)
+    if out.get("insight"):
+        out["insight"] = _normalize_insight(out["insight"]) or _strip_display_json(out["insight"])
+    out["themes_identified"] = [
+        t.replace("_", " ") for t in _normalize_string_list(out.get("themes_identified"))
+    ]
+    out["recommended_followup_questions"] = _normalize_string_list(
+        out.get("recommended_followup_questions")
+    )
+    return out
+
+
+def _strip_display_json(text: str) -> str:
+    """Last-resort: hide raw JSON blobs from the Answer tab."""
+    if not text:
+        return text
+    stripped = text.strip()
+    if stripped.startswith("{") and '"insight"' in stripped[:200]:
+        normalized = _normalize_insight(stripped)
+        return normalized or "Insight could not be formatted — click Refresh insight to try again."
+    return stripped
+
+
 def _fetch_insight(question: str, source: str | None = None, refresh: bool = False) -> dict:
     """Always returns a dict — never None, never raises."""
     cache_key = f"insight::{question}::{source or 'all'}"
@@ -524,7 +552,9 @@ def _fetch_insight(question: str, source: str | None = None, refresh: bool = Fal
                 result = api_get("/insights/question", {"question": question, **({"source": src} if src else {})})
                 if not result:
                     result = _empty_insight(question, "API request failed")
-        st.session_state[cache_key] = result or _empty_insight(question, "No result")
+        st.session_state[cache_key] = _clean_insight_result(
+            result or _empty_insight(question, "No result")
+        )
     return st.session_state[cache_key]
 
 
@@ -559,19 +589,22 @@ def _render_insight_block(result: dict, question: str = "", source: str = "all")
 
     tab_answer, tab_quotes, tab_next = st.tabs(["Answer", "Quotes", "Follow-ups"])
     with tab_answer:
-        st.markdown(result.get("insight", ""))
+        insight_text = _strip_display_json(result.get("insight", ""))
+        st.markdown(insight_text)
         m1, m2, m3 = st.columns(3)
         conf = result.get("confidence", 0)
         m1.metric("Confidence", f"{conf:.0%}")
         m2.metric("Reviews analyzed", result.get("sample_size", 0))
-        m3.metric("Themes found", len(result.get("themes_identified") or []))
-        if result.get("themes_identified"):
+        themes = _normalize_string_list(result.get("themes_identified"))
+        m3.metric("Themes found", len(themes))
+        if themes:
             st.markdown("**Key themes**")
-            theme_cols = st.columns(min(4, len(result["themes_identified"])))
-            for i, theme in enumerate(result["themes_identified"][:8]):
+            theme_cols = st.columns(min(4, len(themes)))
+            for i, theme in enumerate(themes[:8]):
+                label = theme.replace("_", " ")
                 theme_cols[i % len(theme_cols)].markdown(
                     f'<span style="background:{ACCENT_SOFT};color:#047857;padding:6px 12px;'
-                    f'border-radius:999px;font-size:0.85rem;font-weight:600;">{theme}</span>',
+                    f'border-radius:999px;font-size:0.85rem;font-weight:600;">{label}</span>',
                     unsafe_allow_html=True,
                 )
 
@@ -584,7 +617,7 @@ def _render_insight_block(result: dict, question: str = "", source: str = "all")
             st.caption("No supporting quotes returned for this question.")
 
     with tab_next:
-        followups = result.get("recommended_followup_questions") or []
+        followups = _normalize_string_list(result.get("recommended_followup_questions"))
         if followups:
             st.caption("Suggested follow-ups — use the **chat box** below to explore these:")
             for fq in followups:
@@ -642,7 +675,9 @@ def _ask_in_chat(spec: dict, user_prompt: str, source: str | None) -> dict:
     if cache_key not in st.session_state:
         if _use_local():
             try:
-                st.session_state[cache_key] = svc.insights_question(phrased, source=src)
+                st.session_state[cache_key] = _clean_insight_result(
+                    svc.insights_question(phrased, source=src)
+                )
             except Exception as exc:  # noqa: BLE001
                 st.session_state[cache_key] = _empty_insight(phrased, str(exc))
         else:
@@ -650,7 +685,9 @@ def _ask_in_chat(spec: dict, user_prompt: str, source: str | None) -> dict:
                 "/insights/question",
                 {"question": phrased, **({"source": src} if src else {})},
             )
-            st.session_state[cache_key] = result or _empty_insight(phrased, "API failed")
+            st.session_state[cache_key] = _clean_insight_result(
+                result or _empty_insight(phrased, "API failed")
+            )
     return st.session_state[cache_key]
 
 
@@ -697,7 +734,7 @@ def _append_chat_turn(spec: dict, source: str, prompt: str, hist_key: str) -> No
     st.session_state[hist_key].append(
         {
             "role": "assistant",
-            "content": answer.get("insight", "No answer available."),
+            "content": _strip_display_json(answer.get("insight", "No answer available.")),
             "evidence": answer.get("supporting_evidence", []),
         }
     )
