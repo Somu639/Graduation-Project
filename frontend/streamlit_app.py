@@ -159,10 +159,7 @@ DISCOVERY_QUESTIONS: list[dict] = [
     },
 ]
 
-SCREENSHOT_PATH = os.path.join(_ROOT, "screens", "stitch_spotify_ai_discovery_dashboard.png")
-_PAGE_ICON = SCREENSHOT_PATH if os.path.isfile(SCREENSHOT_PATH) else "🎧"
-
-st.set_page_config(page_title="Spotify Discovery Analyzer", page_icon=_PAGE_ICON, layout="wide")
+st.set_page_config(page_title="Spotify Discovery Analyzer", page_icon="🎧", layout="wide")
 
 
 # --------------------------------------------------------------------------- #
@@ -1784,10 +1781,6 @@ def main() -> None:
             )
     except Exception:
         pass
-
-    if os.path.isfile(SCREENSHOT_PATH):
-        with st.sidebar.expander("Design preview", expanded=False):
-            st.image(SCREENSHOT_PATH, caption="Discovery dashboard concept", use_container_width=True)
 
     if _use_local():
         st.sidebar.info("Running in standalone mode (in-process engine)")

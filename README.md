@@ -5,9 +5,9 @@ about Spotify's music **discovery experience** (Discover Weekly, Release Radar,
 recommendations, autoplay) and turns it into actionable product insights using a
 **RAG + multi-agent** architecture.
 
-![Discovery dashboard preview](screens/stitch_spotify_ai_discovery_dashboard.png)
+**Live app (Streamlit):** deploy via [Streamlit Community Cloud](https://share.streamlit.io/) with entry point `streamlit_app.py` at the repo root.
 
-**Live app:** deploy via [Streamlit Community Cloud](https://share.streamlit.io/) with entry point `streamlit_app.py` at the repo root.
+**Static web UI:** Stitch design export lives at `frontend/web/index.html` (also mirrored under `screens/`).
 
 ## Features
 
