@@ -678,6 +678,9 @@ def _render_question_panel(spec: dict, source: str) -> None:
         _render_question_evidence(spec)
 
     _render_discovery_chat(spec, source, insight)
+
+
+def _render_frustrations_block(top_k: int = 12) -> None:
     data = api_get("/insights/frustrations", {"top_k": top_k})
     items = (data or {}).get("frustrations", [])
     if not items:
