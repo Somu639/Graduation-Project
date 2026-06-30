@@ -402,6 +402,44 @@ def insights_segments(request: Request, full: bool = False) -> dict:
     return cached(CacheStore.make_key("segments", full), produce)
 
 
+@router.get("/insights/conclusion", tags=["insights"])
+def insights_conclusion(request: Request) -> dict:
+    """Return prioritized feature recommendations (RICE + MoSCoW) from review evidence."""
+    store = get_vector_store(request)
+    engine = get_engine(request)
+
+    def produce():
+        from agents.feature_prioritizer import build_conclusion
+        from agents.segment_analyzer import DISCOVERY_PROBLEMS
+        from rag.query_engine import _normalize_insight
+
+        records = store.get_records(limit=5000)
+        counts: Counter = Counter()
+        examples: dict[str, str] = {}
+        for record in records:
+            text = (record.get("content") or record.get("clean_text") or "").lower()
+            for problem, keywords in DISCOVERY_PROBLEMS.items():
+                if any(k in text for k in keywords):
+                    counts[problem] += 1
+                    examples.setdefault(problem, record.get("content", "")[:220])
+
+        llm_summary = None
+        if engine.llm_available() and counts:
+            top = ", ".join(f"{k.replace('_', ' ')} ({v})" for k, v in counts.most_common(5))
+            prompt = (
+                "You are a Spotify product strategist. Based on these top user discovery "
+                f"problems from app reviews: {top}.\n\n"
+                "Write a 3-sentence executive conclusion on what to build next. Plain prose only."
+            )
+            raw = engine._invoke(prompt)
+            if raw:
+                llm_summary = _normalize_insight(raw)
+
+        return build_conclusion(dict(counts), examples, len(records), llm_summary).to_dict()
+
+    return cached(CacheStore.make_key("conclusion"), produce, ttl=600)
+
+
 @router.get("/insights/frustrations", tags=["insights"])
 def insights_frustrations(request: Request, top_k: int = 15) -> dict:
     """Return ranked discovery frustrations with representative quotes."""

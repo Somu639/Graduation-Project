@@ -55,6 +55,7 @@ class InsightResponse:
     sample_size: int = 0
     themes_identified: list[str] = field(default_factory=list)
     recommended_followup_questions: list[str] = field(default_factory=list)
+    pain_points: list[dict] = field(default_factory=list)
     llm_fallback: bool = False
     llm_error: str = ""
 
@@ -67,6 +68,7 @@ class InsightResponse:
             "sample_size": self.sample_size,
             "themes_identified": self.themes_identified,
             "recommended_followup_questions": self.recommended_followup_questions,
+            "pain_points": self.pain_points,
             "llm_fallback": self.llm_fallback,
             "llm_error": self.llm_error,
         }
@@ -399,6 +401,7 @@ class DiscoveryInsightEngine:
             supporting_evidence=self._build_evidence(results),
             sample_size=len(results),
             themes_identified=[t["theme"] for t in themes_raw],
+            pain_points=self._collect_pain_points(results),
             recommended_followup_questions=[
                 q for q in QUERY_TEMPLATES.values() if q != question
             ][:3],
@@ -459,6 +462,34 @@ class DiscoveryInsightEngine:
 
         confidence = 0.5 * consistency + 0.3 * sample_factor + 0.2 * avg_score
         return round(max(0.0, min(1.0, confidence)), 2)
+
+    @staticmethod
+    def _collect_pain_points(results: list[dict]) -> list[dict]:
+        """Rank user pain points mentioned in retrieved reviews."""
+        from agents.segment_analyzer import DISCOVERY_PROBLEMS
+
+        counts: Counter[str] = Counter()
+        examples: dict[str, str] = {}
+        for record in results:
+            text = (record.get("content") or "").lower()
+            for problem, keywords in DISCOVERY_PROBLEMS.items():
+                if any(k in text for k in keywords):
+                    counts[problem] += 1
+                    examples.setdefault(problem, record["content"][:220])
+            meta = record.get("metadata", {})
+            indicators = meta.get("frustration_indicators")
+            if isinstance(indicators, str):
+                for ind in (i.strip() for i in indicators.split(",") if i.strip()):
+                    counts[ind] += 1
+                    examples.setdefault(ind, record["content"][:220])
+        return [
+            {
+                "label": problem.replace("_", " ").title(),
+                "mentions": count,
+                "quote": examples.get(problem, ""),
+            }
+            for problem, count in counts.most_common(8)
+        ]
 
     @staticmethod
     def _collect_themes(results: list[dict]) -> list[dict]:
@@ -534,6 +565,7 @@ class DiscoveryInsightEngine:
             supporting_evidence=self._build_evidence(results),
             sample_size=len(results),
             themes_identified=themes,
+            pain_points=self._collect_pain_points(results),
             recommended_followup_questions=followups,
         )
 

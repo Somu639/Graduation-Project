@@ -159,7 +159,10 @@ DISCOVERY_QUESTIONS: list[dict] = [
     },
 ]
 
-st.set_page_config(page_title="Spotify Discovery Analyzer", page_icon="🎧", layout="wide")
+SCREENSHOT_PATH = os.path.join(_ROOT, "screens", "stitch_spotify_ai_discovery_dashboard.png")
+_PAGE_ICON = SCREENSHOT_PATH if os.path.isfile(SCREENSHOT_PATH) else "🎧"
+
+st.set_page_config(page_title="Spotify Discovery Analyzer", page_icon=_PAGE_ICON, layout="wide")
 
 
 # --------------------------------------------------------------------------- #
@@ -332,6 +335,8 @@ def _local_get(path: str, params: dict):
         return svc.insights_frustrations(int(p.get("top_k", 15)))
     if path == "/insights/segments":
         return svc.insights_segments(str(p.get("full", "false")).lower() in ("true", "1", "yes"))
+    if path == "/insights/conclusion":
+        return svc.insights_conclusion()
     if path == "/insights/question":
         try:
             return svc.insights_question(p.get("question", ""), p.get("segment"), p.get("source"))
@@ -521,6 +526,7 @@ def _clean_insight_result(result: dict) -> dict:
     out["recommended_followup_questions"] = _normalize_string_list(
         out.get("recommended_followup_questions")
     )
+    out["pain_points"] = out.get("pain_points") or []
     return out
 
 
@@ -567,9 +573,24 @@ def _empty_insight(question: str, error: str = "") -> dict:
         "sample_size": 0,
         "themes_identified": [],
         "recommended_followup_questions": [],
+        "pain_points": [],
         "llm_fallback": bool(error),
         "llm_error": error,
     }
+
+
+def _render_pain_points(pain_points: list[dict]) -> None:
+    """Show ranked user pain points with supporting quotes."""
+    if not pain_points:
+        st.caption("No specific pain points detected in the reviews for this question.")
+        return
+    for i, pain in enumerate(pain_points):
+        label = pain.get("label", "Pain point")
+        mentions = pain.get("mentions", 0)
+        st.markdown(f"**{i + 1}. {label}** ({mentions} mention{'s' if mentions != 1 else ''})")
+        quote = pain.get("quote", "")
+        if quote:
+            st.caption(f'"{quote[:240]}{"…" if len(quote) > 240 else ""}"')
 
 
 def _render_insight_block(result: dict, question: str = "", source: str = "all") -> None:
@@ -587,7 +608,7 @@ def _render_insight_block(result: dict, question: str = "", source: str = "all")
                 f"({err[:100]})"
             )
 
-    tab_answer, tab_quotes, tab_next = st.tabs(["Answer", "Quotes", "Follow-ups"])
+    tab_answer, tab_pain, tab_quotes = st.tabs(["Answer", "Pain points", "Quotes"])
     with tab_answer:
         insight_text = _strip_display_json(result.get("insight", ""))
         st.markdown(insight_text)
@@ -608,6 +629,9 @@ def _render_insight_block(result: dict, question: str = "", source: str = "all")
                     unsafe_allow_html=True,
                 )
 
+    with tab_pain:
+        _render_pain_points(result.get("pain_points") or [])
+
     evidence = result.get("supporting_evidence", [])
     with tab_quotes:
         if evidence:
@@ -615,15 +639,6 @@ def _render_insight_block(result: dict, question: str = "", source: str = "all")
                 quote_card(ev.get("quote", ""), ev.get("source", ""), ev.get("sentiment", ""))
         else:
             st.caption("No supporting quotes returned for this question.")
-
-    with tab_next:
-        followups = _normalize_string_list(result.get("recommended_followup_questions"))
-        if followups:
-            st.caption("Suggested follow-ups — use the **chat box** below to explore these:")
-            for fq in followups:
-                st.write(f"- {fq}")
-        else:
-            st.caption("Use the chat box below to ask follow-up questions.")
 
     if question and st.button(
         "Refresh insight",
@@ -758,8 +773,6 @@ def _render_question_panel(spec: dict, source: str) -> None:
     with st.expander("Supporting evidence", expanded=False):
         _render_question_evidence(spec)
 
-    _render_discovery_chat(spec, source, insight)
-
 
 def _render_frustrations_block(top_k: int = 12) -> None:
     data = api_get("/insights/frustrations", {"top_k": top_k})
@@ -889,23 +902,16 @@ def _render_repetitive_quotes() -> None:
         quote_card(r["content"][:300], meta.get("source", ""), meta.get("sentiment", ""))
 
 
-def _render_segment_profile(prof: dict, *, full_tier: bool) -> None:
-    """Render one segment profile card contents."""
-    if prof.get("narrative_summary"):
-        st.markdown(prof["narrative_summary"])
+def _render_segment_profile(prof: dict) -> None:
+    """Render one segment profile — layout differs by profile_tier."""
+    is_full = prof.get("profile_tier") == "full"
 
-    tier = prof.get("profile_tier", "basic")
-    if full_tier and tier == "full":
+    if is_full:
         st.markdown(
             f'<span style="background:{ACCENT_SOFT};color:#047857;padding:4px 10px;'
             f'border-radius:999px;font-size:0.75rem;font-weight:700;">LLM deep profile</span>',
             unsafe_allow_html=True,
         )
-        sat = prof.get("recommendation_satisfaction", "unknown")
-        if sat and sat != "unknown":
-            st.metric("Recommendation satisfaction", sat.replace("_", " ").title())
-        if prof.get("good_discovery_definition"):
-            st.markdown(f"**What good discovery means:** {prof['good_discovery_definition']}")
     else:
         st.markdown(
             f'<span style="background:#F3F4F6;color:{TEXT_MUTED};padding:4px 10px;'
@@ -913,23 +919,35 @@ def _render_segment_profile(prof: dict, *, full_tier: bool) -> None:
             unsafe_allow_html=True,
         )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        _bullets("Pain points", prof.get("discovery_pain_points"))
-        _bullets("Primary frustrations", prof.get("primary_frustrations"))
-    with c2:
-        _bullets("Desired outcomes", prof.get("desired_outcomes"))
-        if full_tier:
-            _bullets("Workarounds", prof.get("workarounds"))
-        _bullets("Features mentioned", prof.get("features_mentioned"))
+    if prof.get("narrative_summary"):
+        st.markdown(prof["narrative_summary"])
 
-    if full_tier:
+    if is_full:
+        sat = prof.get("recommendation_satisfaction", "unknown")
+        if sat and sat != "unknown":
+            st.metric("Recommendation satisfaction", sat.replace("_", " ").title())
+        if prof.get("good_discovery_definition"):
+            st.markdown(f"**What good discovery means:** {prof['good_discovery_definition']}")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            _bullets("Pain points", prof.get("discovery_pain_points"))
+            _bullets("Primary frustrations", prof.get("primary_frustrations"))
+            _bullets("Listening habits", prof.get("listening_habits"))
+        with c2:
+            _bullets("Desired outcomes", prof.get("desired_outcomes"))
+            _bullets("Workarounds", prof.get("workarounds"))
+            _bullets("Features mentioned", prof.get("features_mentioned"))
         _journey(prof)
+        quote_limit = 3
+    else:
+        _bullets("Top pain points", prof.get("discovery_pain_points"))
+        quote_limit = 1
 
     quotes = prof.get("sample_quotes") or []
     if quotes:
         st.markdown("**Representative quotes**")
-        for q in quotes[:3 if full_tier else 2]:
+        for q in quotes[:quote_limit]:
             quote_card(q.get("quote", ""), q.get("source", ""))
 
 
@@ -993,7 +1011,7 @@ def _render_segments_block(full_profiles: bool = False) -> None:
             if prof.get("description"):
                 st.caption(prof["description"])
             if prof:
-                _render_segment_profile(prof, full_tier=full_profiles and tier == "full")
+                _render_segment_profile(prof)
             else:
                 st.caption("No profile data for this segment.")
 
@@ -1002,8 +1020,8 @@ def _render_segments_block(full_profiles: bool = False) -> None:
 def page_discovery_questions() -> None:
     hero_banner(
         "Discovery Research Questions",
-        "Six research questions — each with its own evidence-backed insight and grounded chat.",
-        ["Choose a question", "Read the insight", "Ask follow-ups in chat"],
+        "Six research questions — each with an evidence-backed insight and user pain points.",
+        ["Choose a question", "Read the insight", "Review pain points"],
     )
 
     c1, c2 = st.columns([3, 1])
@@ -1019,9 +1037,7 @@ def page_discovery_questions() -> None:
             for k in list(st.session_state):
                 if k.startswith("insight::") or k.startswith("chat::"):
                     del st.session_state[k]
-                if k.startswith("dq_chat_"):
-                    del st.session_state[k]
-            st.toast("Insights and chat history cleared")
+            st.toast("Insights cleared — reloading…")
             st.rerun()
 
     ids = [q["id"] for q in DISCOVERY_QUESTIONS]
@@ -1054,92 +1070,87 @@ def page_discovery_questions() -> None:
 def page_overview() -> None:
     hero_banner(
         "Corpus Overview",
-        "See how healthy your review dataset is, then jump into guided research questions.",
+        "A quick snapshot of your review dataset — what you have and what users talk about most.",
     )
-
-    st.markdown("##### Quick start — pick a research question")
-    qcols = st.columns(3)
-    for i, q in enumerate(DISCOVERY_QUESTIONS):
-        if qcols[i % 3].button(
-            f"{q['icon']} {q['question'][:40]}…" if len(q["question"]) > 40 else f"{q['icon']} {q['question']}",
-            key=f"ov_{q['id']}",
-            use_container_width=True,
-        ):
-            _goto_page("Discovery Questions", question_id=q["id"])
 
     stats = api_get("/stats/overview")
     if not stats:
-        st.info("No data yet. Ingest reviews via the API or the Raw Data page.")
+        st.info("No reviews yet. Go to **Live Reviews** to fetch feedback first.")
+        if st.button("Go to Live Reviews", type="primary"):
+            _goto_page("Live Reviews")
         return
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total reviews", stats.get("total_reviews", 0))
-    c2.metric("Average rating", stats.get("average_rating") or "—")
+    total = stats.get("total_reviews", 0)
+    sentiment = stats.get("by_sentiment", {})
     sources = stats.get("by_source", {})
-    c3.metric("Sources", len(sources))
-    dr = stats.get("date_range")
-    c4.metric("Latest", (dr or {}).get("latest", "—")[:10] if dr else "—")
+    pos = sentiment.get("positive", 0)
+    neg = sentiment.get("negative", 0)
+
+    st.markdown("### At a glance")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total reviews", total)
+    c2.metric("Average rating", stats.get("average_rating") or "—")
+    c3.metric("Positive", pos)
+    c4.metric("Negative", neg)
 
     try:
         import plotly.express as px
     except ImportError:
-        st.warning("Install plotly for charts: pip install plotly")
-        return
+        px = None
 
     left, right = st.columns(2)
     with left:
-        st.subheader("Rating distribution")
-        ratings = stats.get("ratings_distribution", {})
-        if ratings:
-            fig = px.bar(
-                x=list(ratings.keys()), y=list(ratings.values()),
-                labels={"x": "Rating", "y": "Reviews"},
-                color_discrete_sequence=[ACCENT],
+        st.markdown("#### Sentiment mix")
+        if px and sentiment:
+            fig = px.pie(
+                names=list(sentiment.keys()),
+                values=list(sentiment.values()),
+                hole=0.5,
+                color_discrete_sequence=GREEN_SCALE,
             )
             st.plotly_chart(plotly_layout(fig), use_container_width=True)
     with right:
-        st.subheader("Sentiment distribution")
-        sentiment = stats.get("by_sentiment", {})
-        if sentiment:
-            fig = px.pie(
-                names=list(sentiment.keys()), values=list(sentiment.values()),
-                hole=0.45, color_discrete_sequence=GREEN_SCALE,
-            )
-            st.plotly_chart(plotly_layout(fig), use_container_width=True)
-
-    chart_tab1, chart_tab2, chart_tab3 = st.tabs(["By source", "Over time", "Term cloud"])
-    with chart_tab1:
-        st.subheader("Reviews by source")
-        if sources:
+        st.markdown("#### Reviews by source")
+        if px and sources:
             fig = px.bar(
-                x=list(sources.values()), y=list(sources.keys()), orientation="h",
-                labels={"x": "Reviews", "y": "Source"},
+                x=[source_label(s) for s in sources.keys()],
+                y=list(sources.values()),
+                labels={"x": "Source", "y": "Reviews"},
                 color=list(sources.values()),
                 color_continuous_scale="Greens",
             )
             fig.update_layout(showlegend=False)
             st.plotly_chart(plotly_layout(fig), use_container_width=True)
-    with chart_tab2:
-        st.subheader("Review volume over time")
-        timeline = api_get("/stats/timeline")
-        series = (timeline or {}).get("series", [])
-        if series:
-            fig = px.area(
-                x=[s["period"] for s in series], y=[s["count"] for s in series],
-                labels={"x": "Month", "y": "Reviews"},
-                color_discrete_sequence=[ACCENT],
+
+    st.markdown("### What users struggle with most")
+    fr = api_get("/insights/frustrations", {"top_k": 6})
+    items = (fr or {}).get("frustrations", [])
+    if items:
+        for item in items[:6]:
+            label = item["frustration"].replace("_", " ").title()
+            ex = item.get("example") or {}
+            st.markdown(f"**{label}** — {item['count']} mentions")
+            if ex.get("quote"):
+                st.caption(f'"{ex["quote"][:180]}…"')
+    else:
+        st.caption("Frustration patterns will appear after reviews are indexed.")
+
+    st.markdown("### Top discovery themes")
+    themes = api_get("/insights/themes", {"top_k": 10})
+    theme_list = (themes or {}).get("themes", [])
+    if theme_list:
+        tcols = st.columns(min(5, len(theme_list)))
+        for i, t in enumerate(theme_list[:10]):
+            tcols[i % len(tcols)].markdown(
+                f'<span style="background:{ACCENT_SOFT};color:#047857;padding:8px 14px;'
+                f'border-radius:999px;font-size:0.85rem;font-weight:600;">'
+                f'{t["theme"].replace("_", " ").title()} ({t["count"]})</span>',
+                unsafe_allow_html=True,
             )
-            st.plotly_chart(plotly_layout(fig), use_container_width=True)
-        else:
-            st.caption("No dated reviews available for a timeline yet.")
-    with chart_tab3:
-        st.subheader("Discovery term cloud")
-        themes = api_get("/insights/themes", {"top_k": 50})
-        freqs = {t["theme"]: t["count"] for t in (themes or {}).get("themes", [])}
-        if freqs:
-            render_wordcloud(freqs)
-        else:
-            st.caption("No themes available yet.")
+
+    st.markdown("---")
+    if st.button("Explore Discovery Questions →", type="primary"):
+        _goto_page("Discovery Questions")
 
 
 def render_wordcloud(freqs: dict) -> None:
@@ -1250,11 +1261,19 @@ def page_segments() -> None:
         )
     with c2:
         if st.button("Refresh segments", use_container_width=True):
+            for k in list(st.session_state):
+                if k.startswith("segments_data_"):
+                    del st.session_state[k]
             st.rerun()
 
-    spinner_msg = "Generating LLM segment profiles…" if full else "Loading segment overview…"
-    with st.spinner(spinner_msg):
-        data = api_get("/insights/segments", {"full": str(full).lower()})
+    cache_key = f"segments_data_{full}"
+    if cache_key not in st.session_state:
+        spinner_msg = "Generating LLM segment profiles…" if full else "Loading segment overview…"
+        with st.spinner(spinner_msg):
+            st.session_state[cache_key] = api_get(
+                "/insights/segments", {"full": str(full).lower()}
+            )
+    data = st.session_state[cache_key]
     if not data:
         return
 
@@ -1349,7 +1368,7 @@ def page_segments() -> None:
             if prof.get("description"):
                 st.caption(prof["description"])
             if prof:
-                _render_segment_profile(prof, full_tier=full and tier == "full")
+                _render_segment_profile(prof)
             else:
                 st.caption("No profile data for this segment.")
 
@@ -1558,11 +1577,6 @@ def page_live_reviews() -> None:
         st.markdown(fetch_source_help())
     limit = st.slider("Reviews per source", min_value=10, max_value=100, value=30, step=10)
     use_llm = st.checkbox("Use LLM for themes & sentiment", value=True)
-    discovery_filter = st.checkbox(
-        "App Store: discovery-keyword filter only",
-        value=False,
-        help="When enabled, App Store reviews must mention discovery-related terms.",
-    )
 
     if st.button("Fetch & analyze live reviews", type="primary", disabled=not sources):
         with st.spinner("Scraping and analyzing reviews — this may take a minute…"):
@@ -1572,7 +1586,7 @@ def page_live_reviews() -> None:
                     "sources": sources,
                     "limit": limit,
                     "use_llm": use_llm,
-                    "discovery_filter": discovery_filter,
+                    "discovery_filter": False,
                 },
                 timeout=600,
             )
@@ -1610,8 +1624,91 @@ def page_live_reviews() -> None:
         n1, n2 = st.columns(2)
         if n1.button("Go to Discovery Questions", type="primary", use_container_width=True):
             _goto_page("Discovery Questions")
-        if n2.button("View Corpus Overview", use_container_width=True):
-            _goto_page("Corpus Overview")
+        if n2.button("View Conclusion & roadmap", use_container_width=True):
+            _goto_page("Conclusion")
+
+
+def page_conclusion() -> None:
+    hero_banner(
+        "Conclusion",
+        "Recommended features to build next — prioritized from your review evidence using RICE and MoSCoW.",
+        ["Executive summary", "RICE ranking", "MoSCoW roadmap"],
+    )
+
+    with st.spinner("Building feature roadmap from review evidence…"):
+        report = api_get("/insights/conclusion")
+    if not report:
+        st.info("Fetch live reviews first, then return here for a prioritized roadmap.")
+        return
+
+    st.markdown("### Executive summary")
+    st.markdown(report.get("summary", ""))
+    st.caption(f"Based on {report.get('sample_size', 0)} indexed reviews")
+
+    features = report.get("features") or []
+    if not features:
+        st.warning("Not enough evidence to prioritize features yet.")
+        return
+
+    try:
+        import plotly.express as px
+    except ImportError:
+        px = None
+
+    st.markdown("### RICE priority matrix")
+    st.caption("RICE = (Reach × Impact × Confidence) ÷ Effort — higher scores rank first.")
+
+    if px:
+        fig = px.bar(
+            x=[f["rice_score"] for f in features],
+            y=[f["feature"] for f in features],
+            orientation="h",
+            color=[f["rice_score"] for f in features],
+            color_continuous_scale="Greens",
+            labels={"x": "RICE score", "y": "Feature"},
+        )
+        fig.update_layout(showlegend=False, height=max(400, 44 * len(features)))
+        st.plotly_chart(plotly_layout(fig), use_container_width=True)
+
+    st.markdown("### Feature backlog (ranked)")
+    for i, feat in enumerate(features):
+        with st.expander(
+            f"#{i + 1} · {feat['feature']} — RICE {feat['rice_score']} · {feat['moscow']}",
+            expanded=i < 3,
+        ):
+            st.write(feat.get("description", ""))
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Reach", feat.get("reach", 0))
+            m2.metric("Impact", feat.get("impact", 0))
+            m3.metric("Confidence", f"{feat.get('confidence', 0):.0%}")
+            m4.metric("Effort", feat.get("effort", 0))
+            m5.metric("Evidence", feat.get("evidence_count", 0))
+            if feat.get("example_quote"):
+                st.caption(f'User voice: "{feat["example_quote"]}"')
+
+    st.markdown("### MoSCoW roadmap")
+    groups = report.get("moscow_groups") or {}
+    moscow_cols = st.columns(4)
+    moscow_labels = [
+        ("Must have", ACCENT_SOFT, "#047857"),
+        ("Should have", "#DBEAFE", "#1D4ED8"),
+        ("Could have", "#FEF3C7", "#B45309"),
+        ("Won't have (this cycle)", "#F3F4F6", TEXT_MUTED),
+    ]
+    for col, (label, bg, fg) in zip(moscow_cols, moscow_labels):
+        items = groups.get(label, [])
+        col.markdown(
+            f'<div style="background:{bg};border-radius:12px;padding:14px;min-height:120px;">'
+            f'<strong style="color:{fg}">{label}</strong><br>'
+            f'<span style="color:{TEXT_MUTED};font-size:0.85rem">{len(items)} feature(s)</span></div>',
+            unsafe_allow_html=True,
+        )
+        for item in items[:6]:
+            col.markdown(f"- {item}")
+
+    st.markdown("---")
+    if st.button("Back to Discovery Questions", type="primary"):
+        _goto_page("Discovery Questions")
 
 
 # --------------------------------------------------------------------------- #
@@ -1625,6 +1722,7 @@ PAGES = {
     "Corpus Overview": page_overview,
     "Evidence Explorer": page_evidence_explorer,
     "Segment Deep Dive": page_segments,
+    "Conclusion": page_conclusion,
     "Raw Data": page_raw_data,
 }
 
@@ -1686,6 +1784,10 @@ def main() -> None:
             )
     except Exception:
         pass
+
+    if os.path.isfile(SCREENSHOT_PATH):
+        with st.sidebar.expander("Design preview", expanded=False):
+            st.image(SCREENSHOT_PATH, caption="Discovery dashboard concept", use_container_width=True)
 
     if _use_local():
         st.sidebar.info("Running in standalone mode (in-process engine)")

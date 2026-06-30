@@ -121,6 +121,37 @@ def insights_frustrations(top_k: int = 15) -> dict:
     return {"sample_size": sum(counts.values()), "frustrations": ranked}
 
 
+def insights_conclusion() -> dict:
+    vs, engine, _seg = _components()
+    from agents.feature_prioritizer import build_conclusion
+    from agents.segment_analyzer import DISCOVERY_PROBLEMS
+    from rag.query_engine import _normalize_insight
+
+    records = vs.get_records(limit=5000)
+    counts: Counter[str] = Counter()
+    examples: dict[str, str] = {}
+    for record in records:
+        text = (record.get("content") or record.get("clean_text") or "").lower()
+        for problem, keywords in DISCOVERY_PROBLEMS.items():
+            if any(k in text for k in keywords):
+                counts[problem] += 1
+                examples.setdefault(problem, record.get("content", "")[:220])
+
+    llm_summary = None
+    if engine.llm_available() and counts:
+        top = ", ".join(f"{k.replace('_', ' ')} ({v})" for k, v in counts.most_common(5))
+        prompt = (
+            "You are a Spotify product strategist. Based on these top user discovery "
+            f"problems from app reviews: {top}.\n\n"
+            "Write a 3-sentence executive conclusion on what to build next. Plain prose only."
+        )
+        raw = engine._invoke(prompt)  # noqa: SLF001
+        if raw:
+            llm_summary = _normalize_insight(raw)
+
+    return build_conclusion(dict(counts), examples, len(records), llm_summary).to_dict()
+
+
 def insights_segments(full: bool = False) -> dict:
     seg = _components()[2]
     sizes = seg.estimate_sizes()
@@ -160,6 +191,7 @@ def insights_question(question: str, segment: str | None = None, source: str | N
             "sample_size": 0,
             "themes_identified": [],
             "recommended_followup_questions": [],
+            "pain_points": [],
             "llm_fallback": True,
             "llm_error": str(exc),
         }

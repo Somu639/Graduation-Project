@@ -14,7 +14,7 @@ import os
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 
-from rag.query_engine import DiscoveryInsightEngine, _parse_json_object
+from rag.query_engine import DiscoveryInsightEngine, _extract_loose_json_fields, _normalize_insight, _parse_json_object
 from rag.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -109,6 +109,7 @@ class SegmentProfile:
     sample_quotes: list[dict] = field(default_factory=list)
     narrative_summary: str = ""
     profile_tier: str = "basic"
+    listening_habits: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -234,23 +235,27 @@ class SegmentAnalyzer:
             for r in evidence[:4]
         ]
         parsed = self._extractive_profile_fields(evidence) if evidence else {}
+        pains = [
+            _humanize_label(p) for p in (parsed.get("discovery_pain_points") or [])[:2]
+        ]
         pct = (size_estimate or {}).get(segment, {}).get("pct", 0.0)
         return SegmentProfile(
             segment=segment,
             description=cfg["description"],
             size_estimate_pct=pct,
-            behavioral_indicators=cfg["indicators"][:6],
-            primary_frustrations=parsed.get("primary_frustrations", []),
-            desired_outcomes=parsed.get("desired_outcomes", []),
-            discovery_pain_points=parsed.get("discovery_pain_points", []),
-            workarounds=parsed.get("workarounds", []),
-            features_mentioned=parsed.get("features_mentioned", []),
-            recommendation_satisfaction=parsed.get("recommendation_satisfaction", "unknown"),
-            good_discovery_definition=parsed.get("good_discovery_definition", ""),
-            repetitive_triggers=parsed.get("repetitive_triggers", []),
-            sample_quotes=sample_quotes,
+            behavioral_indicators=cfg["indicators"][:4],
+            primary_frustrations=pains,
+            desired_outcomes=[],
+            discovery_pain_points=pains,
+            workarounds=[],
+            features_mentioned=[],
+            recommendation_satisfaction="unknown",
+            good_discovery_definition="",
+            repetitive_triggers=[],
+            sample_quotes=sample_quotes[:1],
             narrative_summary=self._basic_narrative(cfg["description"], evidence, parsed),
             profile_tier="basic",
+            listening_habits=[],
         )
 
     # --- classification & sizing ---------------------------------------- #
@@ -301,62 +306,81 @@ class SegmentAnalyzer:
 
         parsed: dict = {}
         narrative = ""
+        workarounds: list[str] = []
+        listening_habits: list[str] = []
         if llm_configured(self.provider) or llm_configured():
-            json_prompt = (
-                "You are a user research analyst. Profile the Spotify user segment "
-                f"'{segment}' ({cfg['description']}) using ONLY this feedback.\n\n"
-                f"Feedback:\n{context}\n\n"
-                "Return ONLY valid JSON with keys: discovery_pain_points (list), "
-                "workarounds (list), features_mentioned (list), "
-                "recommendation_satisfaction (one of very_low/low/medium/high), "
-                "good_discovery_definition (string), repetitive_triggers (list), "
-                "primary_frustrations (list), desired_outcomes (list)."
+            prose_prompt = (
+                "You are a senior user researcher writing a deep segment profile for Spotify.\n\n"
+                f"Segment: {segment}\n{cfg['description']}\n\nReviews:\n{context}\n\n"
+                "Write a detailed 5-7 sentence profile covering how this segment discovers "
+                "music, their deepest frustrations, workarounds they use, and what good "
+                "discovery means to them. Plain English paragraphs only — no JSON."
             )
-            raw, err = self._invoke(json_prompt)
+            raw, err = self._invoke(prose_prompt)
             if raw:
-                parsed = _parse_json_object(raw) or {}
-            if not parsed:
-                prose_prompt = (
-                    "You are a user research analyst profiling Spotify listeners.\n\n"
-                    f"Segment: {segment} — {cfg['description']}\n\nFeedback:\n{context}\n\n"
-                    "Write a 4-5 sentence narrative covering how this segment discovers "
-                    "music, their main frustrations, and what 'good discovery' means to them. "
-                    "Plain paragraphs only."
-                )
-                prose, _ = self._invoke(prose_prompt)
-                if prose:
-                    narrative = prose.strip()
+                narrative = _normalize_insight(raw) or raw.strip()
+
+            struct_prompt = (
+                f"Segment '{segment}' Spotify listeners — feedback:\n{context}\n\n"
+                "Return ONLY valid JSON with keys: "
+                "workarounds (list of strings), desired_outcomes (list), "
+                "discovery_pain_points (list), primary_frustrations (list), "
+                "features_mentioned (list), listening_habits (list), "
+                "recommendation_satisfaction (very_low|low|medium|high), "
+                "good_discovery_definition (string)."
+            )
+            struct_raw, _ = self._invoke(struct_prompt)
+            if struct_raw:
+                parsed = _parse_json_object(struct_raw) or _extract_loose_json_fields(struct_raw)
+
             if not parsed:
                 parsed = self._extractive_profile_fields(evidence)
-            elif not narrative:
-                narrative = self._basic_narrative(cfg["description"], evidence, parsed)
-            if err and not narrative and not parsed:
+            if not narrative:
+                narrative = (
+                    f"Deep profile — {cfg['description']} "
+                    f"Reviews highlight {_humanize_label(parsed.get('primary_frustrations', ['discovery friction'])[0]) if parsed.get('primary_frustrations') else 'discovery friction'}."
+                )
+            workarounds = parsed.get("workarounds") or []
+            listening_habits = parsed.get("listening_habits") or []
+            if err and not narrative:
                 logger.warning("LLM segment profile failed for %s: %s", segment, err)
         else:
             parsed = self._extractive_profile_fields(evidence)
-            narrative = basic.narrative_summary
+            narrative = (
+                f"LLM unavailable — showing keyword-based profile. "
+                f"{self._basic_narrative(cfg['description'], evidence, parsed)}"
+            )
 
         pct = (size_estimate or {}).get(segment, {}).get("pct", 0.0)
+        frustrations = [
+            _humanize_label(f) for f in (parsed.get("primary_frustrations") or basic.primary_frustrations)
+        ]
+        pains = [
+            _humanize_label(p) for p in (parsed.get("discovery_pain_points") or parsed.get("primary_frustrations") or [])
+        ]
         return SegmentProfile(
             segment=segment,
             description=cfg["description"],
             size_estimate_pct=pct,
             behavioral_indicators=cfg["indicators"],
-            primary_frustrations=parsed.get("primary_frustrations") or basic.primary_frustrations,
-            desired_outcomes=parsed.get("desired_outcomes") or basic.desired_outcomes,
-            discovery_pain_points=parsed.get("discovery_pain_points") or basic.discovery_pain_points,
-            workarounds=parsed.get("workarounds", []),
-            features_mentioned=parsed.get("features_mentioned") or basic.features_mentioned,
+            primary_frustrations=frustrations[:6],
+            desired_outcomes=parsed.get("desired_outcomes") or ["More variety", "Better personalization"],
+            discovery_pain_points=pains[:5],
+            workarounds=workarounds[:5],
+            features_mentioned=[
+                _humanize_label(f) for f in (parsed.get("features_mentioned") or basic.features_mentioned)
+            ],
             recommendation_satisfaction=parsed.get(
                 "recommendation_satisfaction", basic.recommendation_satisfaction
             ),
-            good_discovery_definition=parsed.get(
-                "good_discovery_definition", basic.good_discovery_definition
-            ),
-            repetitive_triggers=parsed.get("repetitive_triggers") or basic.repetitive_triggers,
-            sample_quotes=basic.sample_quotes,
-            narrative_summary=narrative or basic.narrative_summary,
+            good_discovery_definition=parsed.get("good_discovery_definition", ""),
+            repetitive_triggers=[
+                _humanize_label(k) for k in (parsed.get("repetitive_triggers") or basic.repetitive_triggers)
+            ],
+            sample_quotes=basic.sample_quotes[:4],
+            narrative_summary=narrative,
             profile_tier="full",
+            listening_habits=listening_habits[:5],
         )
 
     def build_basic_profiles(self) -> list[SegmentProfile]:
