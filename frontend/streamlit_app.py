@@ -75,43 +75,74 @@ DISCOVERY_QUESTIONS: list[dict] = [
     {
         "id": "discovery_struggle",
         "icon": "🔍",
+        "short_title": "Discovery struggle",
         "question": "Why do users struggle to discover new music?",
         "lens": "Root causes — algorithm limits, repetition, onboarding, filter bubbles",
+        "summary": (
+            "Users often report that recommendations feel repetitive, that Discover Weekly "
+            "and Release Radar surface the same artists, and that the app pushes familiar "
+            "content instead of genuinely new music. Onboarding rarely teaches exploration habits."
+        ),
         "evidence": ["insight", "themes"],
     },
     {
         "id": "recommendation_frustrations",
         "icon": "😤",
+        "short_title": "Frustrations",
         "question": "What are the most common frustrations with recommendations?",
         "lens": "Ranked frustrations and representative quotes from the corpus",
+        "summary": (
+            "Top complaints include irrelevant suggestions, genre mismatch, stale playlists, "
+            "over-reliance on past listening, and lack of control over why something was recommended."
+        ),
         "evidence": ["insight", "frustrations"],
     },
     {
         "id": "desired_behaviors",
         "icon": "🎧",
+        "short_title": "Behaviors",
         "question": "What listening behaviors are users trying to achieve?",
         "lens": "Moods, contexts, exploration goals, and playlist habits",
+        "summary": (
+            "Reviews describe mood-based listening, workout/study/background contexts, "
+            "social sharing, deep genre exploration, and lean-back vs active discovery modes."
+        ),
         "evidence": ["insight", "themes", "behaviors"],
     },
     {
         "id": "repetitive_listening",
         "icon": "🔁",
+        "short_title": "Repetition",
         "question": "What causes users to repeatedly listen to the same content?",
         "lens": "Repetition triggers, stale playlists, and comfort listening",
+        "summary": (
+            "Comfort listening, nostalgia, algorithm loops, and limited fresh suggestions "
+            "lead users to replay the same songs, artists, and playlists rather than explore."
+        ),
         "evidence": ["insight", "quotes_repetitive"],
     },
     {
         "id": "segment_challenges",
         "icon": "👥",
+        "short_title": "Segments",
         "question": "Which user segments experience different discovery challenges?",
         "lens": "Segment sizes, problem heatmap, and per-segment pain points",
+        "summary": (
+            "Casual listeners, power users, genre enthusiasts, and new users describe "
+            "different discovery pain points — from overwhelm to filter bubbles to cold-start gaps."
+        ),
         "evidence": ["segments"],
     },
     {
         "id": "unmet_needs",
         "icon": "💡",
+        "short_title": "Unmet needs",
         "question": "What unmet needs emerge consistently across reviews?",
         "lens": "Cross-cutting gaps users ask for but do not get today",
+        "summary": (
+            "Users repeatedly ask for better genre depth, more control, fresher discovery feeds, "
+            "clearer explanations of recommendations, and tools to break out of repetition."
+        ),
         "evidence": ["insight", "themes", "frustrations"],
     },
 ]
@@ -428,24 +459,6 @@ def quote_card(quote: str, source: str = "", sentiment: str = "") -> None:
     )
 
 
-def _render_question_picker() -> dict:
-    """Interactive grid of research question cards."""
-    if "dq_selected" not in st.session_state:
-        st.session_state["dq_selected"] = DISCOVERY_QUESTIONS[0]["id"]
-
-    st.markdown("##### Pick a research question")
-    cols = st.columns(3)
-    for i, q in enumerate(DISCOVERY_QUESTIONS):
-        selected = st.session_state["dq_selected"] == q["id"]
-        label = f"{q['icon']} {q['question'][:36]}{'…' if len(q['question']) > 36 else ''}"
-        btn_type = "primary" if selected else "secondary"
-        if cols[i % 3].button(label, key=f"qcard_{q['id']}", type=btn_type, use_container_width=True):
-            st.session_state["dq_selected"] = q["id"]
-            st.rerun()
-
-    return _question_by_id(st.session_state["dq_selected"])
-
-
 def _question_by_id(qid: str) -> dict:
     return next(q for q in DISCOVERY_QUESTIONS if q["id"] == qid)
 
@@ -529,21 +542,142 @@ def _render_insight_block(result: dict, question: str = "", source: str = "all")
     with tab_next:
         followups = result.get("recommended_followup_questions") or []
         if followups:
-            st.caption("Click a follow-up to explore it:")
-            for i, fq in enumerate(followups):
-                if st.button(fq, key=f"fu_{question[:24]}_{i}", use_container_width=True):
-                    st.session_state["custom_question"] = fq
-                    st.session_state["dq_run_custom"] = True
-                    st.rerun()
+            st.caption("Suggested follow-ups — use the **chat box** below to explore these:")
+            for fq in followups:
+                st.write(f"- {fq}")
         else:
-            st.caption("No follow-up questions suggested.")
+            st.caption("Use the chat box below to ask follow-up questions.")
 
-    if question and st.button("Refresh insight", key=f"refresh_{question[:24]}", type="secondary"):
+    if question and st.button(
+        "Refresh insight",
+        key=f"refresh_{question[:24]}",
+        type="secondary",
+    ):
         _fetch_insight(question, source if source != "all" else None, refresh=True)
         st.rerun()
 
 
-def _render_frustrations_block(top_k: int = 12) -> None:
+def _render_question_evidence(spec: dict) -> None:
+    """Supporting charts and quotes tailored to each research question."""
+    for kind in spec["evidence"]:
+        if kind == "insight":
+            continue
+        if kind == "frustrations":
+            st.markdown("#### Frustration ranking")
+            _render_frustrations_block()
+        elif kind == "themes":
+            st.markdown("#### Related themes")
+            _render_themes_block()
+        elif kind == "behaviors":
+            _render_behavior_themes()
+        elif kind == "quotes_repetitive":
+            st.markdown("#### Repetition-related reviews")
+            _render_repetitive_quotes()
+        elif kind == "segments":
+            full = st.toggle(
+                "Include full LLM segment profiles (slower)",
+                value=False,
+                key=f"seg_full_{spec['id']}",
+            )
+            _render_segments_block(full_profiles=full)
+
+
+def _chat_history_key(question_id: str) -> str:
+    return f"dq_chat_{question_id}"
+
+
+def _ask_in_chat(spec: dict, user_prompt: str, source: str | None) -> dict:
+    """Answer a follow-up in the context of a research question."""
+    src = source if source and source != "all" else None
+    phrased = (
+        f'Research question: "{spec["question"]}"\n'
+        f"User follow-up: {user_prompt}\n"
+        "Answer using only evidence from indexed Spotify discovery reviews."
+    )
+    cache_key = f"chat::{spec['id']}::{user_prompt}::{src or 'all'}"
+    if cache_key not in st.session_state:
+        if _use_local():
+            try:
+                st.session_state[cache_key] = svc.insights_question(phrased, source=src)
+            except Exception as exc:  # noqa: BLE001
+                st.session_state[cache_key] = _empty_insight(phrased, str(exc))
+        else:
+            result = api_get(
+                "/insights/question",
+                {"question": phrased, **({"source": src} if src else {})},
+            )
+            st.session_state[cache_key] = result or _empty_insight(phrased, "API failed")
+    return st.session_state[cache_key]
+
+
+def _render_discovery_chat(spec: dict, source: str, insight: dict) -> None:
+    """Grounded chat box for follow-ups on the active research question."""
+    hist_key = _chat_history_key(spec["id"])
+    if hist_key not in st.session_state:
+        st.session_state[hist_key] = []
+
+    st.markdown("#### Ask about this question")
+    st.caption(
+        "Follow-up questions are answered from your indexed reviews, "
+        "in the context of the research question above."
+    )
+
+    for msg in st.session_state[hist_key]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            for ev in msg.get("evidence", [])[:3]:
+                quote_card(ev.get("quote", ""), ev.get("source", ""), ev.get("sentiment", ""))
+
+    suggested = insight.get("recommended_followup_questions") or []
+    if suggested and not st.session_state[hist_key]:
+        st.markdown("**Try asking:**")
+        sug_cols = st.columns(min(2, len(suggested)))
+        for i, sq in enumerate(suggested[:4]):
+            if sug_cols[i % len(sug_cols)].button(sq, key=f"suggest_{spec['id']}_{i}"):
+                _append_chat_turn(spec, source, sq, hist_key)
+                st.rerun()
+
+    prompt = st.chat_input(
+        f"Ask about {spec['short_title'].lower()}…",
+        key=f"chat_input_{spec['id']}",
+    )
+    if prompt:
+        _append_chat_turn(spec, source, prompt, hist_key)
+        st.rerun()
+
+
+def _append_chat_turn(spec: dict, source: str, prompt: str, hist_key: str) -> None:
+    st.session_state[hist_key].append({"role": "user", "content": prompt})
+    with st.spinner("Searching reviews for an answer…"):
+        answer = _ask_in_chat(spec, prompt, source if source != "all" else None)
+    st.session_state[hist_key].append(
+        {
+            "role": "assistant",
+            "content": answer.get("insight", "No answer available."),
+            "evidence": answer.get("supporting_evidence", []),
+        }
+    )
+
+
+def _render_question_panel(spec: dict, source: str) -> None:
+    """Full insight + evidence + chat for one research question."""
+    st.markdown(f"### {spec['icon']} {spec['question']}")
+    st.markdown(
+        f'<div class="research-card">'
+        f'<strong>Research lens</strong><br>'
+        f'<span class="research-lens">{spec["lens"]}</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(f"**What we look for:** {spec['summary']}")
+
+    insight = _fetch_insight(spec["question"], source if source != "all" else None)
+    st.markdown("#### Evidence-backed insight")
+    _render_insight_block(insight, spec["question"], source)
+
+    with st.expander("Supporting evidence", expanded=False):
+        _render_question_evidence(spec)
+
+    _render_discovery_chat(spec, source, insight)
     data = api_get("/insights/frustrations", {"top_k": top_k})
     items = (data or {}).get("frustrations", [])
     if not items:
@@ -721,84 +855,49 @@ def _render_segments_block(full_profiles: bool = False) -> None:
 def page_discovery_questions() -> None:
     hero_banner(
         "Discovery Research Questions",
-        "Explore six evidence-backed questions about how users discover music on Spotify.",
-        ["1. Pick a question", "2. Filter & analyze", "3. Read quotes & evidence"],
+        "Six research questions — each with its own evidence-backed insight and grounded chat.",
+        ["Choose a question", "Read the insight", "Ask follow-ups in chat"],
     )
 
-    spec = _render_question_picker()
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        source = st.selectbox(
+            "Filter evidence by source",
+            ["all", "app_store", "play_store", "reddit", "twitter"],
+            format_func=lambda x: "All sources" if x == "all" else source_label(x),
+            key="dq_source",
+        )
+    with c2:
+        if st.button("Refresh insights", use_container_width=True):
+            for k in list(st.session_state):
+                if k.startswith("insight::") or k.startswith("chat::"):
+                    del st.session_state[k]
+                if k.startswith("dq_chat_"):
+                    del st.session_state[k]
+            st.toast("Insights and chat history cleared")
+            st.rerun()
 
-    st.markdown(
-        f'<div class="research-card">'
-        f'<strong>{spec["icon"]} Research lens</strong><br>'
-        f'<span class="research-lens">{spec["lens"]}</span></div>',
-        unsafe_allow_html=True,
+    ids = [q["id"] for q in DISCOVERY_QUESTIONS]
+    labels = [f"{q['icon']} {q['short_title']}" for q in DISCOVERY_QUESTIONS]
+    if "dq_radio" not in st.session_state:
+        default_id = st.session_state.get("dq_selected", ids[0])
+        default_idx = ids.index(default_id) if default_id in ids else 0
+        st.session_state["dq_radio"] = labels[default_idx]
+
+    picked_label = st.radio(
+        "Research question",
+        labels,
+        key="dq_radio",
+        horizontal=True,
+        label_visibility="collapsed",
     )
+    spec = DISCOVERY_QUESTIONS[labels.index(picked_label)]
+    st.session_state["dq_selected"] = spec["id"]
 
-    c1, c2, c3 = st.columns([2, 2, 1])
-    source = c1.selectbox(
-        "Source filter",
-        ["all", "app_store", "play_store", "reddit", "twitter"],
-        format_func=lambda x: "All sources" if x == "all" else source_label(x),
-        key="dq_source",
-    )
-    run = c2.button("Analyze this question", type="primary", use_container_width=True)
-    if c3.button("Clear cache", use_container_width=True):
-        keys = [k for k in st.session_state if k.startswith("insight::")]
-        for k in keys:
-            del st.session_state[k]
-        st.toast("Insight cache cleared")
-        st.rerun()
+    st.markdown("---")
+    _render_question_panel(spec, source)
 
-    custom_q = st.session_state.pop("custom_question", None)
-    if st.session_state.pop("dq_run_custom", False) and custom_q:
-        st.markdown(f"**Exploring follow-up:** {custom_q}")
-        insight = _fetch_insight(custom_q, source if source != "all" else None)
-        _render_insight_block(insight, custom_q, source)
-        st.markdown("---")
-
-    if spec["id"] == "segment_challenges":
-        full = st.toggle("Include full LLM segment profiles (slower)", value=False)
-        tab_seg, tab_insight = st.tabs(["Segment evidence", "Synthesized answer"])
-        with tab_seg:
-            _render_segments_block(full_profiles=full)
-        with tab_insight:
-            if run:
-                insight = _fetch_insight(spec["question"], source if source != "all" else None)
-                _render_insight_block(insight, spec["question"], source)
-            else:
-                st.info("Click **Analyze this question** for a synthesized segment insight.")
-        with st.expander("Advanced: multi-question research agent"):
-            page_research_agent()
-        return
-
-    tab_insight, tab_evidence = st.tabs(["Synthesized answer", "Supporting evidence"])
-
-    with tab_insight:
-        if run:
-            insight = _fetch_insight(spec["question"], source if source != "all" else None)
-            _render_insight_block(insight, spec["question"], source)
-        else:
-            st.info("Click **Analyze this question** to generate an LLM-backed answer from your corpus.")
-
-    with tab_evidence:
-        for kind in spec["evidence"]:
-            if kind == "insight":
-                continue
-            if kind == "frustrations":
-                st.markdown("#### Frustration ranking")
-                _render_frustrations_block()
-            elif kind == "themes":
-                st.markdown("#### Related themes")
-                _render_themes_block()
-            elif kind == "behaviors":
-                _render_behavior_themes()
-            elif kind == "quotes_repetitive":
-                st.markdown("#### Repetition-related reviews")
-                _render_repetitive_quotes()
-            elif kind == "segments":
-                _render_segments_block(full_profiles=False)
-
-    with st.expander("Advanced: multi-question research agent"):
+    with st.expander("Advanced: multi-question research agent", expanded=False):
         page_research_agent()
 
 
@@ -1354,6 +1453,10 @@ def _apply_pending_navigation() -> None:
     dq = st.session_state.pop("_pending_dq", None)
     if dq:
         st.session_state["dq_selected"] = dq
+        ids = [q["id"] for q in DISCOVERY_QUESTIONS]
+        if dq in ids:
+            labels = [f"{q['icon']} {q['short_title']}" for q in DISCOVERY_QUESTIONS]
+            st.session_state["dq_radio"] = labels[ids.index(dq)]
 
 
 def main() -> None:
@@ -1373,12 +1476,6 @@ def main() -> None:
     _apply_pending_navigation()
 
     choice = st.sidebar.radio("Navigate", page_names, key="nav_choice")
-
-    st.sidebar.markdown("### Research questions")
-    for q in DISCOVERY_QUESTIONS:
-        short = f"{q['icon']} {q['question'][:38]}{'…' if len(q['question']) > 38 else ''}"
-        if st.sidebar.button(short, key=f"jump_{q['id']}", use_container_width=True):
-            _goto_page("Discovery Questions", question_id=q["id"])
 
     st.sidebar.markdown("---")
 
