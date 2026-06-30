@@ -387,12 +387,16 @@ def insights_segments(request: Request, full: bool = False) -> dict:
     analyzer = get_segment_analyzer(request)
 
     def produce():
+        sizes = analyzer.estimate_sizes()
         out = {
-            "sizes": analyzer.estimate_sizes(),
+            "sizes": sizes,
             "comparison_matrix": analyzer.build_comparison_matrix(),
+            "profile_tier": "full" if full else "basic",
         }
         if full:
             out["profiles"] = analyzer.analyze_all()
+        else:
+            out["profiles"] = [p.to_dict() for p in analyzer.build_basic_profiles()]
         return out
 
     return cached(CacheStore.make_key("segments", full), produce)

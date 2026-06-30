@@ -126,7 +126,13 @@ def _default_model(provider: str) -> str:
     return os.getenv("LLM_MODEL") or defaults.get(provider, "gpt-4o-mini")
 
 
-def chat_complete(prompt: str, *, temperature: float = 0, provider: str | None = None) -> str:
+def chat_complete(
+    prompt: str,
+    *,
+    temperature: float = 0,
+    provider: str | None = None,
+    max_tokens: int = 2048,
+) -> str:
     """Run a single-turn chat completion and return the assistant text."""
     bootstrap_env()
     p = (provider or auto_llm_provider() or "groq").lower()
@@ -147,6 +153,7 @@ def chat_complete(prompt: str, *, temperature: float = 0, provider: str | None =
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
+            max_tokens=max_tokens,
         )
         return response.choices[0].message.content or ""
 
@@ -184,5 +191,6 @@ def chat_complete(prompt: str, *, temperature: float = 0, provider: str | None =
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=temperature,
+        max_tokens=max_tokens,
     )
     return response.choices[0].message.content or ""

@@ -123,9 +123,16 @@ def insights_frustrations(top_k: int = 15) -> dict:
 
 def insights_segments(full: bool = False) -> dict:
     seg = _components()[2]
-    out = {"sizes": seg.estimate_sizes(), "comparison_matrix": seg.build_comparison_matrix()}
+    sizes = seg.estimate_sizes()
+    out = {
+        "sizes": sizes,
+        "comparison_matrix": seg.build_comparison_matrix(),
+        "profile_tier": "full" if full else "basic",
+    }
     if full:
         out["profiles"] = seg.analyze_all()
+    else:
+        out["profiles"] = [p.to_dict() for p in seg.build_basic_profiles()]
     return out
 
 

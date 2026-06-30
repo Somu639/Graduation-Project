@@ -70,6 +70,17 @@ SENTIMENT_COLORS = {
     "mixed": "#D97706",
 }
 
+SEGMENT_META: dict[str, dict] = {
+    "casual_listeners": {"icon": "🎧", "color": "#6366F1", "label": "Casual listeners"},
+    "active_explorers": {"icon": "🧭", "color": "#0EA5E9", "label": "Active explorers"},
+    "genre_enthusiasts": {"icon": "🎸", "color": "#F59E0B", "label": "Genre enthusiasts"},
+    "mood_based_listeners": {"icon": "💭", "color": "#A855F7", "label": "Mood-based listeners"},
+    "social_listeners": {"icon": "👥", "color": "#EC4899", "label": "Social listeners"},
+    "nostalgic_listeners": {"icon": "📼", "color": "#78716C", "label": "Nostalgic listeners"},
+    "power_users": {"icon": "⚡", "color": "#1DB954", "label": "Power users"},
+    "new_users": {"icon": "✨", "color": "#14B8A6", "label": "New users"},
+}
+
 # Core research questions the dashboard is designed to answer.
 DISCOVERY_QUESTIONS: list[dict] = [
     {
@@ -446,6 +457,39 @@ def plotly_layout(fig):
     return fig
 
 
+def _human_problem(name: str) -> str:
+    return name.replace("_", " ").title()
+
+
+def _segment_label(seg: str) -> str:
+    return SEGMENT_META.get(seg, {}).get("label", seg.replace("_", " ").title())
+
+
+def _segment_icon(seg: str) -> str:
+    return SEGMENT_META.get(seg, {}).get("icon", "👤")
+
+
+def _segment_color(seg: str) -> str:
+    return SEGMENT_META.get(seg, {}).get("color", ACCENT)
+
+
+def segment_card(seg: str, pct: float, count: int) -> None:
+    """Compact segment size card with icon and accent color."""
+    color = _segment_color(seg)
+    icon = _segment_icon(seg)
+    label = _segment_label(seg)
+    st.markdown(
+        f'<div style="background:{SURFACE};border:1px solid {BORDER};border-radius:14px;'
+        f'padding:16px 18px;box-shadow:{SHADOW};border-top:4px solid {color};">'
+        f'<div style="font-size:1.5rem;margin-bottom:6px;">{icon}</div>'
+        f'<div style="font-weight:800;color:{TEXT};font-size:0.95rem;margin-bottom:4px;">{label}</div>'
+        f'<div style="font-size:1.75rem;font-weight:800;color:{color};">{pct}%</div>'
+        f'<div style="color:{TEXT_MUTED};font-size:0.8rem;">{count} matching reviews</div>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def quote_card(quote: str, source: str = "", sentiment: str = "") -> None:
     border = SENTIMENT_COLORS.get((sentiment or "").lower(), ACCENT)
     badge = sentiment_badge(sentiment) if sentiment and sentiment != "n/a" else ""
@@ -508,9 +552,9 @@ def _render_insight_block(result: dict, question: str = "", source: str = "all")
                 "set `LLM_PROVIDER=groq`, then reboot the app."
             )
         else:
-            st.warning(
-                "LLM synthesis unavailable — showing extractive summary from reviews. "
-                f"({err[:120]})"
+            st.caption(
+                "Using review-based synthesis — LLM was unavailable for this answer. "
+                f"({err[:100]})"
             )
 
     tab_answer, tab_quotes, tab_next = st.tabs(["Answer", "Quotes", "Follow-ups"])
@@ -808,6 +852,50 @@ def _render_repetitive_quotes() -> None:
         quote_card(r["content"][:300], meta.get("source", ""), meta.get("sentiment", ""))
 
 
+def _render_segment_profile(prof: dict, *, full_tier: bool) -> None:
+    """Render one segment profile card contents."""
+    if prof.get("narrative_summary"):
+        st.markdown(prof["narrative_summary"])
+
+    tier = prof.get("profile_tier", "basic")
+    if full_tier and tier == "full":
+        st.markdown(
+            f'<span style="background:{ACCENT_SOFT};color:#047857;padding:4px 10px;'
+            f'border-radius:999px;font-size:0.75rem;font-weight:700;">LLM deep profile</span>',
+            unsafe_allow_html=True,
+        )
+        sat = prof.get("recommendation_satisfaction", "unknown")
+        if sat and sat != "unknown":
+            st.metric("Recommendation satisfaction", sat.replace("_", " ").title())
+        if prof.get("good_discovery_definition"):
+            st.markdown(f"**What good discovery means:** {prof['good_discovery_definition']}")
+    else:
+        st.markdown(
+            f'<span style="background:#F3F4F6;color:{TEXT_MUTED};padding:4px 10px;'
+            f'border-radius:999px;font-size:0.75rem;font-weight:700;">Quick snapshot</span>',
+            unsafe_allow_html=True,
+        )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        _bullets("Pain points", prof.get("discovery_pain_points"))
+        _bullets("Primary frustrations", prof.get("primary_frustrations"))
+    with c2:
+        _bullets("Desired outcomes", prof.get("desired_outcomes"))
+        if full_tier:
+            _bullets("Workarounds", prof.get("workarounds"))
+        _bullets("Features mentioned", prof.get("features_mentioned"))
+
+    if full_tier:
+        _journey(prof)
+
+    quotes = prof.get("sample_quotes") or []
+    if quotes:
+        st.markdown("**Representative quotes**")
+        for q in quotes[:3 if full_tier else 2]:
+            quote_card(q.get("quote", ""), q.get("source", ""))
+
+
 def _render_segments_block(full_profiles: bool = False) -> None:
     data = api_get("/insights/segments", {"full": str(full_profiles).lower()})
     if not data:
@@ -815,15 +903,17 @@ def _render_segments_block(full_profiles: bool = False) -> None:
     sizes = data.get("sizes", {})
     matrix = data.get("comparison_matrix", {})
     profiles = {p["segment"]: p for p in data.get("profiles", [])}
+    tier = data.get("profile_tier", "full" if full_profiles else "basic")
 
-    st.markdown("#### Segment sizes")
+    sorted_segments = sorted(
+        sizes.items(), key=lambda x: x[1].get("pct", 0), reverse=True
+    )
+
+    st.markdown("#### Who appears in the reviews")
     cols = st.columns(4)
-    for i, (seg, info) in enumerate(sizes.items()):
-        cols[i % 4].metric(
-            seg.replace("_", " ").title(),
-            f"{info.get('pct', 0)}%",
-            f"{info.get('count', 0)} reviews",
-        )
+    for i, (seg, info) in enumerate(sorted_segments):
+        with cols[i % 4]:
+            segment_card(seg, info.get("pct", 0), info.get("count", 0))
 
     problems = matrix.get("problems", [])
     seg_matrix = matrix.get("matrix", {})
@@ -832,27 +922,44 @@ def _render_segments_block(full_profiles: bool = False) -> None:
 
         if problems and seg_matrix:
             st.markdown("#### Discovery challenges by segment")
-            segs = list(seg_matrix.keys())
+            segs = [s for s, _ in sorted_segments if s in seg_matrix]
+            problem_labels = [_human_problem(p) for p in problems]
             z = [[seg_matrix[s][p]["pct"] for p in problems] for s in segs]
             fig = px.imshow(
-                z, x=problems, y=segs, color_continuous_scale="Greens",
-                labels=dict(color="% of segment mentioning problem"),
+                z,
+                x=problem_labels,
+                y=[_segment_label(s) for s in segs],
+                color_continuous_scale="Greens",
+                labels=dict(color="% of segment"),
+                aspect="auto",
             )
+            fig.update_xaxes(tickangle=-35)
             st.plotly_chart(plotly_layout(fig), use_container_width=True)
     except ImportError:
         pass
 
-    if full_profiles and profiles:
-        st.markdown("#### Segment profiles")
-        for seg in sizes:
-            prof = profiles.get(seg)
-            if not prof:
-                continue
-            with st.expander(seg.replace("_", " ").title()):
-                _bullets("Pain points", prof.get("discovery_pain_points"))
-                _bullets("Primary frustrations", prof.get("primary_frustrations"))
-                for q in prof.get("sample_quotes", [])[:2]:
-                    quote_card(q.get("quote", ""), q.get("source", ""))
+    st.markdown("#### Segment profiles")
+    if full_profiles:
+        st.caption("Full LLM profiles include satisfaction scores, workarounds, and journey mapping.")
+    else:
+        st.caption("Quick snapshots from review keywords and quotes — enable full profiles for deeper LLM analysis.")
+
+    for seg, info in sorted_segments:
+        prof = profiles.get(seg, {})
+        color = _segment_color(seg)
+        icon = _segment_icon(seg)
+        label = _segment_label(seg)
+        with st.expander(
+            f"{icon} {label} — {info.get('pct', 0)}% · {info.get('count', 0)} reviews",
+            expanded=info.get("pct", 0) >= 15,
+        ):
+            if prof.get("description"):
+                st.caption(prof["description"])
+            if prof:
+                _render_segment_profile(prof, full_tier=full_profiles and tier == "full")
+            else:
+                st.caption("No profile data for this segment.")
+
 
 
 def page_discovery_questions() -> None:
@@ -1094,9 +1201,22 @@ def page_segments() -> None:
     hero_banner(
         "Segment Deep Dive",
         "Compare how casual listeners, power users, and other segments experience discovery differently.",
+        ["Browse segment cards", "Explore the heatmap", "Toggle LLM profiles for depth"],
     )
-    full = st.toggle("Include full LLM profiles (slower)", value=False)
-    with st.spinner("Loading segments..."):
+
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        full = st.toggle(
+            "Include full LLM profiles (slower)",
+            value=False,
+            help="Off: quick keyword + quote snapshots. On: LLM narrative, satisfaction, workarounds, and journey.",
+        )
+    with c2:
+        if st.button("Refresh segments", use_container_width=True):
+            st.rerun()
+
+    spinner_msg = "Generating LLM segment profiles…" if full else "Loading segment overview…"
+    with st.spinner(spinner_msg):
         data = api_get("/insights/segments", {"full": str(full).lower()})
     if not data:
         return
@@ -1104,65 +1224,97 @@ def page_segments() -> None:
     sizes = data.get("sizes", {})
     matrix = data.get("comparison_matrix", {})
     profiles = {p["segment"]: p for p in data.get("profiles", [])}
+    tier = data.get("profile_tier", "full" if full else "basic")
 
-    st.subheader("Segment sizes (% of reviews)")
+    sorted_segments = sorted(
+        sizes.items(), key=lambda x: x[1].get("pct", 0), reverse=True
+    )
+
+    st.markdown("### Audience overview")
+    st.caption(
+        "Segments overlap — one review can match multiple listener types."
+    )
     cols = st.columns(4)
-    for i, (seg, info) in enumerate(sizes.items()):
-        cols[i % 4].metric(seg.replace("_", " ").title(), f"{info.get('pct', 0)}%", f"{info.get('count',0)} reviews")
+    for i, (seg, info) in enumerate(sorted_segments):
+        with cols[i % 4]:
+            segment_card(seg, info.get("pct", 0), info.get("count", 0))
 
-    # Radar comparing segments across discovery problems.
-    try:
-        import plotly.graph_objects as go
-    except ImportError:
-        go = None
     problems = matrix.get("problems", [])
     seg_matrix = matrix.get("matrix", {})
-    if go and problems and seg_matrix:
-        st.subheader("Segment comparison radar")
-        chosen = st.multiselect(
-            "Segments to compare", list(seg_matrix.keys()),
-            default=list(seg_matrix.keys())[:3],
-        )
-        fig = go.Figure()
-        for seg in chosen:
-            vals = [seg_matrix[seg][p]["pct"] for p in problems]
-            fig.add_trace(go.Scatterpolar(r=vals, theta=problems, fill="toself", name=seg))
-        fig.update_layout(polar=dict(radialaxis=dict(visible=True)))
-        st.plotly_chart(plotly_layout(fig), use_container_width=True)
-
-    # Heatmap of the comparison matrix.
     try:
+        import plotly.graph_objects as go
         import plotly.express as px
     except ImportError:
+        go = None
         px = None
-    if px and problems and seg_matrix:
-        st.subheader("Discovery problems × segments")
-        segs = list(seg_matrix.keys())
-        z = [[seg_matrix[s][p]["pct"] for p in problems] for s in segs]
-        fig = px.imshow(
-            z, x=problems, y=segs, color_continuous_scale="Greens",
-            labels=dict(color="% of segment"),
-        )
-        st.plotly_chart(plotly_layout(fig), use_container_width=True)
 
-    st.subheader("Segment profiles")
-    for seg, info in sizes.items():
-        with st.expander(f"{seg.replace('_', ' ').title()} — {info.get('pct',0)}% of reviews"):
-            prof = profiles.get(seg)
+    chart_left, chart_right = st.columns([1, 1])
+    with chart_left:
+        if px and problems and seg_matrix:
+            st.markdown("#### Problem heatmap")
+            segs = [s for s, _ in sorted_segments if s in seg_matrix]
+            problem_labels = [_human_problem(p) for p in problems]
+            z = [[seg_matrix[s][p]["pct"] for p in problems] for s in segs]
+            fig = px.imshow(
+                z,
+                x=problem_labels,
+                y=[_segment_label(s) for s in segs],
+                color_continuous_scale="Greens",
+                labels=dict(color="% mentioning"),
+                aspect="auto",
+            )
+            fig.update_xaxes(tickangle=-35)
+            st.plotly_chart(plotly_layout(fig), use_container_width=True)
+
+    with chart_right:
+        if go and problems and seg_matrix:
+            st.markdown("#### Top segments by problem")
+            top_segs = [s for s, _ in sorted_segments[:4] if s in seg_matrix]
+            chosen_problem = st.selectbox(
+                "Discovery problem",
+                problems,
+                format_func=_human_problem,
+                key="seg_problem_pick",
+            )
+            fig = go.Figure()
+            pcts = [seg_matrix[seg][chosen_problem]["pct"] for seg in top_segs]
+            fig.add_trace(
+                go.Bar(
+                    x=pcts,
+                    y=[_segment_label(seg) for seg in top_segs],
+                    orientation="h",
+                    marker_color=[_segment_color(seg) for seg in top_segs],
+                    text=[f"{p}%" for p in pcts],
+                    textposition="outside",
+                )
+            )
+            fig.update_layout(
+                showlegend=False,
+                xaxis_title="% of segment mentioning this problem",
+                height=max(280, 56 * len(top_segs)),
+            )
+            st.plotly_chart(plotly_layout(fig), use_container_width=True)
+
+    st.markdown("### Segment profiles")
+    if full:
+        st.info("Full LLM profiles — narrative summaries, satisfaction, workarounds, and discovery journey.")
+    else:
+        st.caption("Quick snapshots from review evidence. Turn on **Include full LLM profiles** above for deeper analysis.")
+
+    for seg, info in sorted_segments:
+        prof = profiles.get(seg, {})
+        icon = _segment_icon(seg)
+        label = _segment_label(seg)
+        with st.expander(
+            f"{icon} {label} — {info.get('pct', 0)}% · {info.get('count', 0)} reviews",
+            expanded=info.get("pct", 0) >= 12,
+        ):
+            if prof.get("description"):
+                st.caption(prof["description"])
             if prof:
-                st.write(f"**Satisfaction:** {prof.get('recommendation_satisfaction','—')}")
-                if prof.get("good_discovery_definition"):
-                    st.write(f"**'Good discovery' means:** {prof['good_discovery_definition']}")
-                _bullets("Pain points", prof.get("discovery_pain_points"))
-                _bullets("Primary frustrations", prof.get("primary_frustrations"))
-                _bullets("Desired outcomes", prof.get("desired_outcomes"))
-                _bullets("Workarounds", prof.get("workarounds"))
-                _bullets("Features mentioned", prof.get("features_mentioned"))
-                _journey(prof)
-                for q in prof.get("sample_quotes", []):
-                    quote_card(q.get("quote", ""), q.get("source", ""))
+                _render_segment_profile(prof, full_tier=full and tier == "full")
             else:
-                st.caption("Enable full profiles above to load LLM analysis.")
+                st.caption("No profile data for this segment.")
 
 
 def _bullets(label: str, items) -> None:

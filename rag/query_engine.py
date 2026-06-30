@@ -108,13 +108,51 @@ class FeatureRequest:
 
 
 def _parse_json_object(raw: str) -> dict | None:
-    match = _JSON_OBJECT_RE.search(raw)
-    if not match:
+    """Parse a JSON object from LLM output (handles markdown fences and preamble)."""
+    if not raw or not raw.strip():
         return None
-    try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError:
+    text = raw.strip()
+    fenced = re.match(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", text, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
+    candidates = [text]
+    match = _JSON_OBJECT_RE.search(text)
+    if match and match.group(0) != text:
+        candidates.append(match.group(0))
+    for candidate in candidates:
+        try:
+            obj = json.loads(candidate)
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _insight_from_llm_raw(raw: str) -> str | None:
+    """Extract an insight string from LLM output (JSON or plain prose)."""
+    parsed = _parse_json_object(raw)
+    if parsed:
+        insight = parsed.get("insight") or parsed.get("summary") or parsed.get("answer")
+        if insight and str(insight).strip():
+            return str(insight).strip()
+    stripped = raw.strip()
+    if len(stripped) < 40:
         return None
+    if stripped.startswith("{") and '"insight"' in stripped[:120]:
+        return None
+    for prefix in ("Answer:", "Insight:", "Summary:", "Response:"):
+        if stripped.startswith(prefix):
+            stripped = stripped[len(prefix) :].strip()
+    return stripped if len(stripped) >= 40 else None
+
+
+def _is_auth_error_from_msg(msg: str) -> bool:
+    lowered = msg.lower()
+    return any(
+        token in lowered
+        for token in ("401", "invalid api key", "invalid_api_key", "authentication", "unauthorized")
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -196,6 +234,7 @@ class DiscoveryInsightEngine:
             return None
 
         self._last_llm_error = ""
+        last_errors: list[str] = []
         for provider in candidates:
             if provider in tried:
                 continue
@@ -207,33 +246,67 @@ class DiscoveryInsightEngine:
                 self.provider = provider
                 return text
             if err:
+                last_errors.append(err)
                 self._last_llm_error = err
 
-        self._llm_disabled = True
+        if last_errors and all(_is_auth_error_from_msg(e) for e in last_errors):
+            self._llm_disabled = True
         return None
 
+    def _synthesize_prose_insight(self, question: str, context: str) -> str | None:
+        """Second-pass LLM call: plain prose synthesis (no JSON)."""
+        prompt = (
+            "You are a senior UX researcher analyzing Spotify music discovery feedback.\n\n"
+            f"Research question: {question}\n\nUser reviews:\n{context}\n\n"
+            "Write a clear, meaningful answer in 4-6 sentences that synthesizes patterns "
+            "across the reviews. Explain what users struggle with, why it matters, and what "
+            "they want from discovery. Use flowing paragraphs only — do NOT open with "
+            "statistics like 'Across X reviews' or percentage breakdowns. Ground every claim "
+            "in the reviews provided."
+        )
+        return self._invoke(prompt)
+
     def _extractive_insight(self, question: str, results: list[dict]) -> InsightResponse:
-        """Build a grounded insight WITHOUT an LLM (lexical/statistical only)."""
-        sentiments = Counter(
-            r.get("metadata", {}).get("sentiment", "unknown") for r in results
-        )
-        total = len(results)
-        dominant, dom_count = (sentiments.most_common(1)[0] if sentiments else ("unknown", 0))
-        themes = [t["theme"] for t in self._collect_themes(results)[:5]]
-        top_quote = results[0]["content"][:200] if results else ""
-        insight = (
-            f"Across {total} relevant reviews, sentiment is predominantly "
-            f"{dominant} ({(dom_count / total * 100):.0f}%). "
-            + (f"Recurring themes: {', '.join(themes)}. " if themes else "")
-            + (f"Representative feedback: \u201c{top_quote}\u201d" if top_quote else "")
-        )
+        """Build a narrative insight from review text without an LLM."""
+        themes_raw = self._collect_themes(results)[:4]
+        themes = [t["theme"].replace("_", " ") for t in themes_raw]
+        quotes = [r["content"].strip() for r in results[:5] if r.get("content")]
+
+        paragraphs: list[str] = []
+        if quotes:
+            paragraphs.append(
+                "Reviewers describe how Spotify's discovery experience fits — or fails to fit — "
+                "their listening habits, often pointing to gaps between what they expect and "
+                "what the product delivers."
+            )
+        if themes:
+            if len(themes) == 1:
+                theme_text = themes[0]
+            elif len(themes) == 2:
+                theme_text = f"{themes[0]} and {themes[1]}"
+            else:
+                theme_text = ", ".join(themes[:-1]) + f", and {themes[-1]}"
+            paragraphs.append(
+                f"Recurring concerns in the feedback touch on {theme_text}."
+            )
+        for q in quotes[:3]:
+            snippet = q[:160] + ("…" if len(q) > 160 else "")
+            paragraphs.append(f'As one user put it: "{snippet}"')
+        if not paragraphs:
+            paragraphs.append("Limited review text was available for this question.")
+        else:
+            paragraphs.append(
+                "Taken together, the reviews highlight a need for discovery that feels "
+                "personal, varied, and easier to navigate."
+            )
+
         return InsightResponse(
             question=question,
-            insight=insight,
+            insight=" ".join(paragraphs),
             confidence=self._confidence(results),
             supporting_evidence=self._build_evidence(results),
-            sample_size=total,
-            themes_identified=themes,
+            sample_size=len(results),
+            themes_identified=[t["theme"] for t in themes_raw],
             recommended_followup_questions=[
                 q for q in QUERY_TEMPLATES.values() if q != question
             ][:3],
@@ -341,11 +414,16 @@ class DiscoveryInsightEngine:
             fallback.llm_error = self._last_llm_error or "LLM unavailable"
             return fallback
 
+        insight_text = _insight_from_llm_raw(raw)
         parsed = _parse_json_object(raw) or {}
-        if not parsed.get("insight"):
+
+        if not insight_text:
+            insight_text = self._synthesize_prose_insight(question, context)
+
+        if not insight_text:
             fallback = self._extractive_insight(question, results)
             fallback.llm_fallback = True
-            fallback.llm_error = self._last_llm_error or "LLM returned empty response"
+            fallback.llm_error = self._last_llm_error or "Could not parse LLM response"
             return fallback
 
         themes = parsed.get("themes_identified") or [
@@ -357,7 +435,7 @@ class DiscoveryInsightEngine:
 
         return InsightResponse(
             question=question,
-            insight=parsed.get("insight", "Unable to synthesize an insight."),
+            insight=insight_text,
             confidence=self._confidence(results),
             supporting_evidence=self._build_evidence(results),
             sample_size=len(results),

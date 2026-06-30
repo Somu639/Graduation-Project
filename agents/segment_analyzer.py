@@ -11,16 +11,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 
-from rag.query_engine import DiscoveryInsightEngine
+from rag.query_engine import DiscoveryInsightEngine, _parse_json_object
 from rag.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
-
-_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 # Segment -> description + behavioral indicator keywords found in review text.
 SEGMENTS: dict[str, dict] = {
@@ -110,19 +107,15 @@ class SegmentProfile:
     good_discovery_definition: str = ""
     repetitive_triggers: list[str] = field(default_factory=list)
     sample_quotes: list[dict] = field(default_factory=list)
+    narrative_summary: str = ""
+    profile_tier: str = "basic"
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
-def _parse_json_object(raw: str) -> dict | None:
-    match = _JSON_OBJECT_RE.search(raw)
-    if not match:
-        return None
-    try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
+def _humanize_label(name: str) -> str:
+    return name.replace("_", " ").title()
 
 
 class SegmentAnalyzer:
@@ -139,18 +132,40 @@ class SegmentAnalyzer:
     ) -> None:
         self.vector_store = vector_store or VectorStore()
         self.engine = engine or DiscoveryInsightEngine(vector_store=self.vector_store)
-        self.provider = provider or os.getenv("LLM_PROVIDER", "openai")
+        from processors.llm_client import auto_llm_provider
+
+        self.provider = provider or auto_llm_provider() or os.getenv("LLM_PROVIDER", "groq")
         self.model = model
         self.temperature = temperature
         self.segments = segments or SEGMENTS
 
     # --- LLM ------------------------------------------------------------- #
-    def _invoke(self, prompt: str) -> str:
-        from processors.llm_client import chat_complete
+    def _invoke(self, prompt: str) -> tuple[str | None, str | None]:
+        from processors.llm_client import auto_llm_provider, chat_complete_safe, llm_configured
 
-        return chat_complete(
-            prompt, temperature=self.temperature, provider=self.provider
-        )
+        tried: set[str] = set()
+        candidates: list[str] = []
+        first = auto_llm_provider()
+        if first:
+            candidates.append(first)
+        for p in ("groq", "openai", "anthropic"):
+            if p not in candidates and llm_configured(p):
+                candidates.append(p)
+
+        last_err = ""
+        for provider in candidates:
+            if provider in tried:
+                continue
+            tried.add(provider)
+            text, err = chat_complete_safe(
+                prompt, temperature=self.temperature, provider=provider
+            )
+            if text:
+                self.provider = provider
+                return text, None
+            if err:
+                last_err = err
+        return None, last_err or "LLM unavailable"
 
     @staticmethod
     def _extractive_profile_fields(evidence: list[dict]) -> dict:
@@ -183,6 +198,60 @@ class SegmentAnalyzer:
                 k for k in top_frustrations if "repetit" in k or "same" in k
             ],
         }
+
+    @staticmethod
+    def _basic_narrative(description: str, evidence: list[dict], parsed: dict) -> str:
+        """Short extractive narrative for quick segment snapshots."""
+        frustrations = parsed.get("primary_frustrations") or []
+        if frustrations:
+            fr_text = ", ".join(_humanize_label(f) for f in frustrations[:3])
+            opener = f"Users in this segment often mention {fr_text}."
+        else:
+            opener = f"{description.rstrip('.')}."
+        quote = ""
+        if evidence:
+            snippet = evidence[0]["content"][:180]
+            quote = f' One reviewer writes: "{snippet}{"…" if len(evidence[0]["content"]) > 180 else ""}"'
+        return opener + quote
+
+    def _segment_evidence(self, segment: str) -> tuple[dict, list[dict], str]:
+        cfg = self.segments[segment]
+        query = f"{cfg['description']} {' '.join(cfg['indicators'][:5])}"
+        evidence = self.vector_store.similarity_search(query, top_k=15)
+        context = "\n".join(f"- {r['content'][:220]}" for r in evidence)
+        return cfg, evidence, context
+
+    def build_basic_profile(
+        self, segment: str, size_estimate: dict | None = None
+    ) -> SegmentProfile:
+        """Fast extractive profile — always available without LLM."""
+        cfg, evidence, _ = self._segment_evidence(segment)
+        sample_quotes = [
+            {
+                "quote": r["content"][:240],
+                "source": r.get("metadata", {}).get("source", "unknown"),
+            }
+            for r in evidence[:4]
+        ]
+        parsed = self._extractive_profile_fields(evidence) if evidence else {}
+        pct = (size_estimate or {}).get(segment, {}).get("pct", 0.0)
+        return SegmentProfile(
+            segment=segment,
+            description=cfg["description"],
+            size_estimate_pct=pct,
+            behavioral_indicators=cfg["indicators"][:6],
+            primary_frustrations=parsed.get("primary_frustrations", []),
+            desired_outcomes=parsed.get("desired_outcomes", []),
+            discovery_pain_points=parsed.get("discovery_pain_points", []),
+            workarounds=parsed.get("workarounds", []),
+            features_mentioned=parsed.get("features_mentioned", []),
+            recommendation_satisfaction=parsed.get("recommendation_satisfaction", "unknown"),
+            good_discovery_definition=parsed.get("good_discovery_definition", ""),
+            repetitive_triggers=parsed.get("repetitive_triggers", []),
+            sample_quotes=sample_quotes,
+            narrative_summary=self._basic_narrative(cfg["description"], evidence, parsed),
+            profile_tier="basic",
+        )
 
     # --- classification & sizing ---------------------------------------- #
     def classify_review(self, text: str) -> list[str]:
@@ -220,41 +289,52 @@ class SegmentAnalyzer:
     def analyze_segment(
         self, segment: str, size_estimate: dict | None = None
     ) -> SegmentProfile:
-        """Build a full profile for a single segment, grounded in evidence."""
-        cfg = self.segments[segment]
-        query = f"{cfg['description']} {' '.join(cfg['indicators'][:5])}"
-        evidence = self.vector_store.similarity_search(query, top_k=15)
+        """Build a full LLM-enriched profile for a single segment."""
+        cfg, evidence, context = self._segment_evidence(segment)
+        basic = self.build_basic_profile(segment, size_estimate)
 
-        sample_quotes = [
-            {
-                "quote": r["content"][:240],
-                "source": r.get("metadata", {}).get("source", "unknown"),
-            }
-            for r in evidence[:4]
-        ]
-        context = "\n".join(f"- {r['content'][:220]}" for r in evidence)
+        if not evidence:
+            basic.profile_tier = "full"
+            return basic
 
-        prompt = (
-            "You are a user research analyst. Profile the Spotify user segment "
-            f"'{segment}' ({cfg['description']}) using ONLY this feedback.\n\n"
-            f"Feedback:\n{context}\n\n"
-            "Return ONLY valid JSON with keys: discovery_pain_points (list), "
-            "workarounds (list), features_mentioned (list), "
-            "recommendation_satisfaction (one of very_low/low/medium/high), "
-            "good_discovery_definition (string), repetitive_triggers (list), "
-            "primary_frustrations (list), desired_outcomes (list)."
-        )
+        from processors.llm_client import llm_configured
+
         parsed: dict = {}
-        if evidence:
-            from processors.llm_client import llm_configured
-
-            if llm_configured(self.provider):
-                try:
-                    parsed = _parse_json_object(self._invoke(prompt)) or {}
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("LLM segment profile failed for %s: %s", segment, exc)
+        narrative = ""
+        if llm_configured(self.provider) or llm_configured():
+            json_prompt = (
+                "You are a user research analyst. Profile the Spotify user segment "
+                f"'{segment}' ({cfg['description']}) using ONLY this feedback.\n\n"
+                f"Feedback:\n{context}\n\n"
+                "Return ONLY valid JSON with keys: discovery_pain_points (list), "
+                "workarounds (list), features_mentioned (list), "
+                "recommendation_satisfaction (one of very_low/low/medium/high), "
+                "good_discovery_definition (string), repetitive_triggers (list), "
+                "primary_frustrations (list), desired_outcomes (list)."
+            )
+            raw, err = self._invoke(json_prompt)
+            if raw:
+                parsed = _parse_json_object(raw) or {}
+            if not parsed:
+                prose_prompt = (
+                    "You are a user research analyst profiling Spotify listeners.\n\n"
+                    f"Segment: {segment} — {cfg['description']}\n\nFeedback:\n{context}\n\n"
+                    "Write a 4-5 sentence narrative covering how this segment discovers "
+                    "music, their main frustrations, and what 'good discovery' means to them. "
+                    "Plain paragraphs only."
+                )
+                prose, _ = self._invoke(prose_prompt)
+                if prose:
+                    narrative = prose.strip()
             if not parsed:
                 parsed = self._extractive_profile_fields(evidence)
+            elif not narrative:
+                narrative = self._basic_narrative(cfg["description"], evidence, parsed)
+            if err and not narrative and not parsed:
+                logger.warning("LLM segment profile failed for %s: %s", segment, err)
+        else:
+            parsed = self._extractive_profile_fields(evidence)
+            narrative = basic.narrative_summary
 
         pct = (size_estimate or {}).get(segment, {}).get("pct", 0.0)
         return SegmentProfile(
@@ -262,16 +342,26 @@ class SegmentAnalyzer:
             description=cfg["description"],
             size_estimate_pct=pct,
             behavioral_indicators=cfg["indicators"],
-            primary_frustrations=parsed.get("primary_frustrations", []),
-            desired_outcomes=parsed.get("desired_outcomes", []),
-            discovery_pain_points=parsed.get("discovery_pain_points", []),
+            primary_frustrations=parsed.get("primary_frustrations") or basic.primary_frustrations,
+            desired_outcomes=parsed.get("desired_outcomes") or basic.desired_outcomes,
+            discovery_pain_points=parsed.get("discovery_pain_points") or basic.discovery_pain_points,
             workarounds=parsed.get("workarounds", []),
-            features_mentioned=parsed.get("features_mentioned", []),
-            recommendation_satisfaction=parsed.get("recommendation_satisfaction", "unknown"),
-            good_discovery_definition=parsed.get("good_discovery_definition", ""),
-            repetitive_triggers=parsed.get("repetitive_triggers", []),
-            sample_quotes=sample_quotes,
+            features_mentioned=parsed.get("features_mentioned") or basic.features_mentioned,
+            recommendation_satisfaction=parsed.get(
+                "recommendation_satisfaction", basic.recommendation_satisfaction
+            ),
+            good_discovery_definition=parsed.get(
+                "good_discovery_definition", basic.good_discovery_definition
+            ),
+            repetitive_triggers=parsed.get("repetitive_triggers") or basic.repetitive_triggers,
+            sample_quotes=basic.sample_quotes,
+            narrative_summary=narrative or basic.narrative_summary,
+            profile_tier="full",
         )
+
+    def build_basic_profiles(self) -> list[SegmentProfile]:
+        sizes = self.estimate_sizes()
+        return [self.build_basic_profile(name, sizes) for name in self.segments]
 
     def build_profiles(self) -> list[SegmentProfile]:
         """Build profiles for every configured segment."""
