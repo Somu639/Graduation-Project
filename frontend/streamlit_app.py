@@ -39,6 +39,11 @@ API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
 # Local (in-process) mode: used automatically when no FastAPI server is reachable.
 # Force it with LOCAL_MODE=1, or force HTTP with USE_API=1.
 import local_service as svc  # noqa: E402  (after sys.path setup)
+from aura_ui import (  # noqa: E402
+    inject_aura_css,
+    render_aura_home,
+    render_aura_sidebar_header,
+)
 from processors.llm_client import bootstrap_env, llm_configured  # noqa: E402
 from scrapers.source_registry import (  # noqa: E402
     FETCH_SOURCES,
@@ -159,7 +164,7 @@ DISCOVERY_QUESTIONS: list[dict] = [
     },
 ]
 
-st.set_page_config(page_title="Spotify Discovery Analyzer", page_icon="🎧", layout="wide")
+st.set_page_config(page_title="Discovery Analyzer", page_icon="🎧", layout="wide")
 
 
 # --------------------------------------------------------------------------- #
@@ -1510,6 +1515,33 @@ def page_raw_data() -> None:
                 quote_card(r["content"][:300], meta.get("source", ""), meta.get("sentiment", ""))
 
 
+def page_home() -> None:
+    """Aura AI Stitch home — live corpus stats woven into the design export."""
+    stats = api_get("/stats/overview")
+    themes_data = api_get("/insights/themes", {"top_k": 6})
+    themes = (themes_data or {}).get("themes", [])
+
+    if not stats or not stats.get("total_reviews"):
+        st.info(
+            "No reviews indexed yet. Use **New Discovery Session** in the sidebar "
+            "to fetch live reviews, then return here."
+        )
+
+    render_aura_home(stats, themes)
+
+    st.markdown("---")
+    st.markdown("#### Continue your research")
+    c1, c2, c3, c4 = st.columns(4)
+    if c1.button("Fetch reviews", use_container_width=True, type="primary"):
+        _goto_page("Live Reviews")
+    if c2.button("Discovery Lab", use_container_width=True):
+        _goto_page("Discovery Questions")
+    if c3.button("Segment analysis", use_container_width=True):
+        _goto_page("Segment Deep Dive")
+    if c4.button("Roadmap", use_container_width=True):
+        _goto_page("Conclusion")
+
+
 def page_live_reviews() -> None:
     hero_banner(
         "Live Reviews",
@@ -1711,9 +1743,10 @@ def page_conclusion() -> None:
 # --------------------------------------------------------------------------- #
 # App shell
 # --------------------------------------------------------------------------- #
-_DEFAULT_PAGE = "Live Reviews"
+_DEFAULT_PAGE = "Home"
 
 PAGES = {
+    "Home": page_home,
     "Live Reviews": page_live_reviews,
     "Discovery Questions": page_discovery_questions,
     "Corpus Overview": page_overview,
@@ -1721,6 +1754,28 @@ PAGES = {
     "Segment Deep Dive": page_segments,
     "Conclusion": page_conclusion,
     "Raw Data": page_raw_data,
+}
+
+# Sidebar labels aligned with Aura Stitch navigation
+_NAV_LABELS = {
+    "Home": "Home",
+    "Live Reviews": "New Discovery Session",
+    "Discovery Questions": "Discovery Lab",
+    "Corpus Overview": "Library",
+    "Evidence Explorer": "Search",
+    "Segment Deep Dive": "Segments",
+    "Conclusion": "AI Roadmap",
+    "Raw Data": "Raw Data",
+}
+_NAV_ICONS = {
+    "Home": "🏠",
+    "Live Reviews": "➕",
+    "Discovery Questions": "🔬",
+    "Corpus Overview": "📚",
+    "Evidence Explorer": "🔍",
+    "Segment Deep Dive": "👥",
+    "Conclusion": "🤖",
+    "Raw Data": "📋",
 }
 
 
@@ -1737,6 +1792,7 @@ def _apply_pending_navigation() -> None:
     pending = st.session_state.pop("_pending_nav", None)
     if pending in PAGES:
         st.session_state["nav_choice"] = pending
+        st.session_state["nav_display"] = f"{_NAV_ICONS[pending]} {_NAV_LABELS[pending]}"
     dq = st.session_state.pop("_pending_dq", None)
     if dq:
         st.session_state["dq_selected"] = dq
@@ -1747,14 +1803,9 @@ def _apply_pending_navigation() -> None:
 
 
 def main() -> None:
+    inject_aura_css()
     inject_css()
-    st.sidebar.markdown(
-        f"<div style='padding:4px 0 12px 0'>"
-        f"<span style='font-size:1.6rem'>🎧</span> "
-        f"<span style='color:{ACCENT};font-weight:800;font-size:1.15rem'>Discovery Analyzer</span>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
+    render_aura_sidebar_header()
 
     page_names = list(PAGES.keys())
     if "nav_choice" not in st.session_state:
@@ -1762,7 +1813,30 @@ def main() -> None:
 
     _apply_pending_navigation()
 
-    choice = st.sidebar.radio("Navigate", page_names, key="nav_choice")
+    display_options = [f"{_NAV_ICONS[p]} {_NAV_LABELS[p]}" for p in page_names]
+    page_to_display = {p: f"{_NAV_ICONS[p]} {_NAV_LABELS[p]}" for p in page_names}
+    display_to_page = {v: k for k, v in page_to_display.items()}
+
+    if "nav_display" not in st.session_state:
+        st.session_state["nav_display"] = page_to_display.get(
+            st.session_state["nav_choice"], display_options[0]
+        )
+
+    current_display = page_to_display.get(st.session_state["nav_choice"], display_options[0])
+    if st.session_state.get("nav_display") not in display_to_page:
+        st.session_state["nav_display"] = current_display
+
+    picked = st.sidebar.radio(
+        "Navigate",
+        display_options,
+        index=display_options.index(st.session_state["nav_display"])
+        if st.session_state["nav_display"] in display_options
+        else 0,
+        key="nav_display",
+        label_visibility="collapsed",
+    )
+    st.session_state["nav_choice"] = display_to_page[picked]
+    choice = st.session_state["nav_choice"]
 
     st.sidebar.markdown("---")
 
