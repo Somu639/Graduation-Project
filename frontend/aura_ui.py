@@ -131,13 +131,37 @@ def inject_aura_css() -> None:
           section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
             font-family: 'Plus Jakarta Sans', sans-serif;
           }
+          section[data-testid="stSidebar"] h1.aura-brand-title,
+          section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1.aura-brand-title {
+            font-family: 'Plus Jakarta Sans', sans-serif !important;
+            font-size: 2.75rem !important;
+            font-weight: 800 !important;
+            color: #006e2d !important;
+            letter-spacing: -0.03em !important;
+            line-height: 1.05 !important;
+            margin: 0 0 8px 0 !important;
+            padding: 0 !important;
+            border: none !important;
+          }
+          h1.home-main-heading,
+          [data-testid="stMarkdownContainer"] h1.home-main-heading {
+            font-family: 'Plus Jakarta Sans', sans-serif !important;
+            font-size: 3.25rem !important;
+            font-weight: 800 !important;
+            color: #006e2d !important;
+            letter-spacing: -0.03em !important;
+            line-height: 1.08 !important;
+            margin: 0 0 12px 0 !important;
+            padding: 0 !important;
+            border: none !important;
+          }
           .aura-brand-title {
             font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 1.75rem;
+            font-size: 2.75rem;
             font-weight: 800;
             color: #006e2d;
             margin: 0;
-            line-height: 1.1;
+            line-height: 1.05;
           }
           .aura-brand-sub {
             font-family: 'Hanken Grotesk', sans-serif;
@@ -165,11 +189,11 @@ def inject_aura_css() -> None:
           }
           .home-hero-title {
             font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 2rem;
+            font-size: 3.25rem;
             font-weight: 800;
             color: #006e2d;
-            margin: 0 0 8px 0;
-            line-height: 1.2;
+            margin: 0 0 12px 0;
+            line-height: 1.08;
           }
           .home-hero-sub {
             font-family: 'Plus Jakarta Sans', sans-serif;
@@ -227,10 +251,19 @@ def inject_aura_css() -> None:
 
 
 def render_aura_sidebar_header() -> None:
-    st.markdown(
+    st.sidebar.markdown(
         """
-        <p class="aura-brand-title">Spotify Discovery Engine</p>
-        <p class="aura-brand-sub">AI-Powered Review Research</p>
+        <h1 class="aura-brand-title" style="
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 2.75rem;
+          font-weight: 800;
+          color: #006e2d;
+          letter-spacing: -0.03em;
+          line-height: 1.05;
+          margin: 0 0 8px 0;
+          padding: 0;
+        ">Spotify Discovery Engine</h1>
+        <p class="aura-brand-sub" style="margin-top: 0;">AI-Powered Review Research</p>
         """,
         unsafe_allow_html=True,
     )
@@ -245,10 +278,19 @@ def render_product_home(
     """Home tab — product intro, data sources, pipeline; no charts or tab duplicates."""
     st.markdown(
         """
-        <p class="home-hero-title">Spotify AI-Powered Review Discovery Engine</p>
+        <h1 class="home-main-heading" style="
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 3.25rem;
+          font-weight: 800;
+          color: #006e2d;
+          letter-spacing: -0.03em;
+          line-height: 1.08;
+          margin: 0 0 12px 0;
+          padding: 0;
+        ">Spotify Discovery Engine</h1>
         <p class="home-hero-sub">
-          Collects real public feedback about Spotify music discovery, analyzes it with NLP and LLMs,
-          and turns it into cited insights for product research and graduation-project evaluation.
+          AI-powered review discovery — collects real public feedback about Spotify music discovery,
+          analyzes it with NLP and LLMs, and turns it into cited insights for product research.
         </p>
         """,
         unsafe_allow_html=True,

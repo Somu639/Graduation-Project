@@ -23,7 +23,30 @@ from .vector_store import VectorStore
 logger = logging.getLogger(__name__)
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
+_JSON_ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
 DEFAULT_TOP_K = 20
+
+# Extra retrieval terms so each research question pulls a distinct review slice.
+RETRIEVAL_QUERY_BOOST: dict[str, str] = {
+    "Why do users struggle to discover new music?": (
+        "cannot find new artists struggle discovery algorithm filter bubble onboarding overwhelm"
+    ),
+    "What are the most common frustrations with recommendations?": (
+        "bad recommendations irrelevant annoying repetitive wrong genre stale discover weekly"
+    ),
+    "What listening behaviors are users trying to achieve?": (
+        "mood workout study focus party background vibe context playlist habit goal"
+    ),
+    "What causes users to repeatedly listen to the same content?": (
+        "same songs repeat loop comfort nostalgia stale playlist no new music"
+    ),
+    "Which user segments experience different discovery challenges?": (
+        "casual listener power user new user genre enthusiast different needs segment"
+    ),
+    "What unmet needs emerge consistently across reviews?": (
+        "wish could need want missing lack control explain recommendation feature request"
+    ),
+}
 
 # Pre-built templates for common discovery questions.
 QUERY_TEMPLATES: dict[str, str] = {
@@ -129,6 +152,50 @@ def _parse_json_object(raw: str) -> dict | None:
         except json.JSONDecodeError:
             continue
     return None
+
+
+def _parse_json_array(raw: str) -> list | None:
+    """Parse a JSON array from LLM output (handles markdown fences and preamble)."""
+    if not raw or not raw.strip():
+        return None
+    text = raw.strip()
+    fenced = re.match(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", text, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
+    candidates = [text]
+    match = _JSON_ARRAY_RE.search(text)
+    if match and match.group(0) != text:
+        candidates.append(match.group(0))
+    for candidate in candidates:
+        try:
+            obj = json.loads(candidate)
+            if isinstance(obj, list):
+                return obj
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _normalize_pain_points(items) -> list[dict]:
+    """Validate pain point dicts from LLM or keyword extraction."""
+    if not items:
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        if not label or label.lower() in seen:
+            continue
+        seen.add(label.lower())
+        try:
+            mentions = int(item.get("mentions") or 1)
+        except (TypeError, ValueError):
+            mentions = 1
+        quote = str(item.get("quote") or "").strip()[:240]
+        out.append({"label": label, "mentions": max(1, mentions), "quote": quote})
+    return out
 
 
 def _normalize_string_list(items) -> list[str]:
@@ -401,7 +468,7 @@ class DiscoveryInsightEngine:
             supporting_evidence=self._build_evidence(results),
             sample_size=len(results),
             themes_identified=[t["theme"] for t in themes_raw],
-            pain_points=self._collect_pain_points(results),
+            pain_points=self._resolve_pain_points(question, "", results),
             recommended_followup_questions=[
                 q for q in QUERY_TEMPLATES.values() if q != question
             ][:3],
@@ -464,32 +531,167 @@ class DiscoveryInsightEngine:
         return round(max(0.0, min(1.0, confidence)), 2)
 
     @staticmethod
-    def _collect_pain_points(results: list[dict]) -> list[dict]:
-        """Rank user pain points mentioned in retrieved reviews."""
+    def _enhanced_retrieval_query(question: str) -> str:
+        """Append question-specific terms so retrieval differs per research question."""
+        q = question.strip()
+        boost = RETRIEVAL_QUERY_BOOST.get(q)
+        if not boost:
+            for template_q, extra in RETRIEVAL_QUERY_BOOST.items():
+                if template_q in q:
+                    boost = extra
+                    break
+        return f"{q} {boost}" if boost else q
+
+    @staticmethod
+    def _pain_focus_for_question(question: str) -> set[str]:
+        """Problems most relevant to each research question."""
         from agents.segment_analyzer import DISCOVERY_PROBLEMS
 
-        counts: Counter[str] = Counter()
-        examples: dict[str, str] = {}
+        q = question.lower()
+        if "struggle" in q and "discover" in q:
+            return {
+                "poor_personalization",
+                "filter_bubble",
+                "overwhelming_choice",
+                "cold_start_onboarding",
+                "stale_discover_weekly",
+            }
+        if "frustration" in q and "recommend" in q:
+            return {
+                "repetitive_recommendations",
+                "poor_personalization",
+                "stale_discover_weekly",
+                "lack_of_control",
+                "mood_context_mismatch",
+            }
+        if "listening behavior" in q or "trying to achieve" in q:
+            return {
+                "mood_context_mismatch",
+                "overwhelming_choice",
+                "lack_of_control",
+                "poor_personalization",
+            }
+        if "repeatedly listen" in q or "same content" in q:
+            return {
+                "repetitive_recommendations",
+                "filter_bubble",
+                "stale_discover_weekly",
+                "poor_personalization",
+            }
+        if "segment" in q:
+            return set(DISCOVERY_PROBLEMS.keys())
+        if "unmet" in q:
+            return {
+                "lack_of_control",
+                "poor_personalization",
+                "stale_discover_weekly",
+                "overwhelming_choice",
+                "filter_bubble",
+                "repetitive_recommendations",
+            }
+        return set(DISCOVERY_PROBLEMS.keys())
+
+    def _extract_pain_points_llm(self, question: str, context: str) -> list[dict]:
+        """LLM: pain points tailored to the active research question."""
+        prompt = (
+            "You are a UX researcher analyzing Spotify discovery feedback.\n\n"
+            f"Research question: {question}\n\n"
+            f"Reviews:\n{context}\n\n"
+            "Extract 4-6 DISTINCT user pain points that are specifically relevant to "
+            "THIS research question — not generic Spotify complaints that apply to every topic.\n"
+            "Each item needs a short label (3-8 words) and one verbatim quote from the reviews.\n"
+            "Return ONLY a JSON array:\n"
+            '[{"label": "...", "mentions": 1, "quote": "..."}]'
+        )
+        raw = self._invoke(prompt)
+        if not raw:
+            return []
+        parsed = _parse_json_array(raw)
+        if not parsed:
+            obj = _parse_json_object(raw)
+            if obj and isinstance(obj.get("pain_points"), list):
+                parsed = obj["pain_points"]
+        return _normalize_pain_points(parsed)
+
+    @staticmethod
+    def _collect_pain_points(question: str, results: list[dict]) -> list[dict]:
+        """Rank pain points in retrieved reviews, weighted by question relevance."""
+        from agents.segment_analyzer import DISCOVERY_PROBLEMS
+
+        focus = DiscoveryInsightEngine._pain_focus_for_question(question)
+        scored: dict[str, dict] = {}
+
         for record in results:
             text = (record.get("content") or "").lower()
+            quote = (record.get("content") or "")[:220]
+            weight = max(0.15, min(1.0, float(record.get("score", 0.5) or 0.5)))
+
             for problem, keywords in DISCOVERY_PROBLEMS.items():
-                if any(k in text for k in keywords):
-                    counts[problem] += 1
-                    examples.setdefault(problem, record["content"][:220])
+                hits = sum(1 for k in keywords if k in text)
+                if not hits:
+                    continue
+                boost = 2.5 if problem in focus else 0.35
+                add = weight * boost * hits
+                entry = scored.setdefault(
+                    problem, {"score": 0.0, "mentions": 0, "quote": "", "best_hit": 0.0}
+                )
+                entry["score"] += add
+                entry["mentions"] += 1
+                if add > entry["best_hit"]:
+                    entry["best_hit"] = add
+                    entry["quote"] = quote
+
             meta = record.get("metadata", {})
             indicators = meta.get("frustration_indicators")
             if isinstance(indicators, str):
                 for ind in (i.strip() for i in indicators.split(",") if i.strip()):
-                    counts[ind] += 1
-                    examples.setdefault(ind, record["content"][:220])
-        return [
-            {
-                "label": problem.replace("_", " ").title(),
-                "mentions": count,
-                "quote": examples.get(problem, ""),
-            }
-            for problem, count in counts.most_common(8)
-        ]
+                    key = ind if ind in DISCOVERY_PROBLEMS else f"frustration:{ind}"
+                    boost = 2.0 if ind in focus else 0.5
+                    add = weight * boost
+                    entry = scored.setdefault(
+                        key, {"score": 0.0, "mentions": 0, "quote": "", "best_hit": 0.0}
+                    )
+                    entry["score"] += add
+                    entry["mentions"] += 1
+                    if add > entry["best_hit"]:
+                        entry["best_hit"] = add
+                        entry["quote"] = quote
+
+            raw_themes = meta.get("themes", "")
+            for theme in (t.strip() for t in raw_themes.split(",") if t.strip()):
+                boost = 2.2 if theme in focus else 0.55
+                add = weight * boost
+                entry = scored.setdefault(
+                    theme, {"score": 0.0, "mentions": 0, "quote": "", "best_hit": 0.0}
+                )
+                entry["score"] += add
+                entry["mentions"] += 1
+                if add > entry["best_hit"]:
+                    entry["best_hit"] = add
+                    entry["quote"] = quote
+
+        ranked = sorted(scored.items(), key=lambda x: x[1]["score"], reverse=True)
+        return _normalize_pain_points(
+            [
+                {
+                    "label": problem.replace("_", " ").title().removeprefix("Frustration:"),
+                    "mentions": data["mentions"],
+                    "quote": data["quote"],
+                }
+                for problem, data in ranked[:8]
+                if data["score"] > 0
+            ]
+        )
+
+    def _resolve_pain_points(
+        self, question: str, context: str, results: list[dict]
+    ) -> list[dict]:
+        """Question-specific pain points — LLM when available, else weighted extraction."""
+        if self.llm_available() and context:
+            llm_pains = self._extract_pain_points_llm(question, context)
+            if len(llm_pains) >= 2:
+                return llm_pains[:8]
+        return self._collect_pain_points(question, results)
 
     @staticmethod
     def _collect_themes(results: list[dict]) -> list[dict]:
@@ -505,7 +707,8 @@ class DiscoveryInsightEngine:
         self, question: str, top_k: int = DEFAULT_TOP_K, filters: dict | None = None
     ) -> InsightResponse:
         """Answer a question with a grounded insight + supporting evidence."""
-        results = self._retrieve(question, top_k=top_k, filters=filters)
+        query = self._enhanced_retrieval_query(question)
+        results = self._retrieve(query, top_k=top_k, filters=filters)
         if not results:
             return InsightResponse(
                 question=question,
@@ -565,7 +768,7 @@ class DiscoveryInsightEngine:
             supporting_evidence=self._build_evidence(results),
             sample_size=len(results),
             themes_identified=themes,
-            pain_points=self._collect_pain_points(results),
+            pain_points=self._resolve_pain_points(question, context, results),
             recommended_followup_questions=followups,
         )
 

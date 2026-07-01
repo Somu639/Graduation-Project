@@ -192,6 +192,20 @@ def inject_css() -> None:
             color: {TEXT};
         }}
         h1, h2, h3, h4 {{ color: {TEXT}; font-weight: 700; }}
+        h1.aura-brand-title, h1.home-main-heading {{
+            font-weight: 800 !important;
+            color: #006e2d !important;
+        }}
+        section[data-testid="stSidebar"] h1.aura-brand-title {{
+            font-size: 2.75rem !important;
+            line-height: 1.05 !important;
+            margin: 0 0 8px 0 !important;
+        }}
+        h1.home-main-heading {{
+            font-size: 3.25rem !important;
+            line-height: 1.08 !important;
+            margin: 0 0 12px 0 !important;
+        }}
         .stMarkdown, .stText, label, p {{ color: {TEXT}; }}
         div[data-testid="stMetric"] {{
             background-color: {SURFACE};
@@ -430,6 +444,30 @@ def api_get(path: str, params: dict | None = None, timeout: int = 120):
         return None
 
 
+def _corpus_count() -> int:
+    stats = api_get("/stats/overview")
+    return int((stats or {}).get("total_reviews", 0) or 0)
+
+
+def _require_corpus(page_key: str) -> bool:
+    """Block page body until reviews are indexed; Home and Live Reviews stay open."""
+    if _corpus_count() > 0:
+        return True
+    st.info(
+        "No reviews indexed yet. Open **New Discovery Session** in the sidebar to fetch "
+        "app store and community reviews — analysis will appear here after indexing."
+    )
+    if st.button("Go to New Discovery Session", type="primary", key=f"need_corpus_{page_key}"):
+        _goto_page("Live Reviews")
+    return False
+
+
+def _clear_insight_cache() -> None:
+    for k in list(st.session_state):
+        if k.startswith("insight::") or k.startswith("chat::"):
+            del st.session_state[k]
+
+
 def api_post(path: str, payload: dict, timeout: int = 300):
     if _use_local():
         try:
@@ -549,6 +587,9 @@ def _strip_display_json(text: str) -> str:
 
 def _fetch_insight(question: str, source: str | None = None, refresh: bool = False) -> dict:
     """Always returns a dict — never None, never raises."""
+    if _corpus_count() == 0:
+        return _empty_insight(question, "no_corpus")
+
     cache_key = f"insight::{question}::{source or 'all'}"
     if refresh and cache_key in st.session_state:
         del st.session_state[cache_key]
@@ -571,6 +612,19 @@ def _fetch_insight(question: str, source: str | None = None, refresh: bool = Fal
 
 
 def _empty_insight(question: str, error: str = "") -> dict:
+    if error == "no_corpus":
+        return {
+            "question": question,
+            "insight": "",
+            "confidence": 0.0,
+            "supporting_evidence": [],
+            "sample_size": 0,
+            "themes_identified": [],
+            "recommended_followup_questions": [],
+            "pain_points": [],
+            "llm_fallback": False,
+            "llm_error": "",
+        }
     return {
         "question": question,
         "insight": "Fetch live reviews first, then analyze this question.",
@@ -600,6 +654,10 @@ def _render_pain_points(pain_points: list[dict]) -> None:
 
 
 def _render_insight_block(result: dict, question: str = "", source: str = "all") -> None:
+    if result.get("sample_size", 0) == 0 and not result.get("insight"):
+        st.caption("Insights will appear here after reviews are fetched and indexed.")
+        return
+
     if result.get("llm_fallback") and result.get("llm_error"):
         err = result.get("llm_error", "")
         if "401" in err or "invalid api key" in err.lower():
@@ -1024,6 +1082,9 @@ def _render_segments_block(full_profiles: bool = False) -> None:
 
 
 def page_discovery_questions() -> None:
+    if not _require_corpus("discovery"):
+        return
+
     hero_banner(
         "Discovery Research Questions",
         "Six research questions — each with an evidence-backed insight and user pain points.",
@@ -1040,9 +1101,7 @@ def page_discovery_questions() -> None:
         )
     with c2:
         if st.button("Refresh insights", use_container_width=True):
-            for k in list(st.session_state):
-                if k.startswith("insight::") or k.startswith("chat::"):
-                    del st.session_state[k]
+            _clear_insight_cache()
             st.toast("Insights cleared — reloading…")
             st.rerun()
 
@@ -1074,6 +1133,9 @@ def page_discovery_questions() -> None:
 # Pages
 # --------------------------------------------------------------------------- #
 def page_overview() -> None:
+    if not _require_corpus("overview"):
+        return
+
     hero_banner(
         "Corpus Overview",
         "A quick snapshot of your review dataset — what you have and what users talk about most.",
@@ -1081,9 +1143,6 @@ def page_overview() -> None:
 
     stats = api_get("/stats/overview")
     if not stats:
-        st.info("No reviews yet. Go to **Live Reviews** to fetch feedback first.")
-        if st.button("Go to Live Reviews", type="primary"):
-            _goto_page("Live Reviews")
         return
 
     total = stats.get("total_reviews", 0)
@@ -1233,6 +1292,9 @@ def page_theme_explorer() -> None:
 
 
 def page_evidence_explorer() -> None:
+    if not _require_corpus("evidence"):
+        return
+
     hero_banner(
         "Evidence Explorer",
         "Filter themes and frustrations interactively — click chips and drill into quotes.",
@@ -1252,6 +1314,9 @@ def page_insight_qa() -> None:
 
 
 def page_segments() -> None:
+    if not _require_corpus("segments"):
+        return
+
     hero_banner(
         "Segment Deep Dive",
         "Compare how casual listeners, power users, and other segments experience discovery differently.",
@@ -1468,6 +1533,9 @@ def _json_dumps(obj) -> str:
 
 
 def page_raw_data() -> None:
+    if not _require_corpus("raw_data"):
+        return
+
     hero_banner("Raw Data", "Search and filter individual reviews from the indexed corpus.")
     q = st.text_input("Search query (leave blank to browse)", "", placeholder="e.g. discover weekly repetitive")
     c1, c2, c3, c4 = st.columns(4)
@@ -1632,6 +1700,10 @@ def page_live_reviews() -> None:
             f"processed {result.get('processed', 0)}, "
             f"indexed into store."
         )
+        _clear_insight_cache()
+        for k in list(st.session_state):
+            if k.startswith("segments_data_"):
+                del st.session_state[k]
         if result.get("llm_used"):
             st.info("LLM analysis was applied to this batch.")
         for warning in result.get("warnings") or []:
@@ -1654,6 +1726,9 @@ def page_live_reviews() -> None:
 
 
 def page_conclusion() -> None:
+    if not _require_corpus("conclusion"):
+        return
+
     hero_banner(
         "Conclusion",
         "Recommended features to build next — prioritized from your review evidence using RICE and MoSCoW.",
@@ -1663,7 +1738,6 @@ def page_conclusion() -> None:
     with st.spinner("Building feature roadmap from review evidence…"):
         report = api_get("/insights/conclusion")
     if not report:
-        st.info("Fetch live reviews first, then return here for a prioritized roadmap.")
         return
 
     st.markdown("### Executive summary")
